@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
 
 class RegisterPage extends StatefulWidget {
   @override
@@ -14,42 +12,20 @@ class _RegisterPageState extends State<RegisterPage> {
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
 
-  void _register() async{
-    String nama = _fullNameController.text;
+  void _register() {
+    String name = _fullNameController.text;
     String email = _emailController.text;
     String password = _passwordController.text;
     String confirmPassword = _confirmPasswordController.text;
 
-    if (nama.isEmpty || email.isEmpty || password.isEmpty || confirmPassword.isEmpty) {
+    if (name.isEmpty || email.isEmpty || password.isEmpty || confirmPassword.isEmpty) {
       _showDialog('All fields are required.');
-    } else if (password.length < 6) {
-      _showDialog('Password must be at least 6 characters.');
+    } else if (password.length < 8) {
+      _showDialog('Password must be at least 8 characters.');
     } else if (password != confirmPassword) {
       _showDialog('Passwords do not match.');
     } else {
-      try {
-        final response = await http.post(
-          Uri.parse('http://127.0.0.1:8000/api/mobile/register'), 
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({
-            'nama': nama,
-            'email': email,
-            'password': password,
-            'password_confirmation': confirmPassword,
-          }),
-        );
-
-        final data = jsonDecode(response.body);
-        if (response.statusCode == 200) {
-          _showDialog('Registration successful!', isSuccess: true);
-        } else {
-          String errorMessage = data['message'] ?? 'Registration failed.';
-          _showDialog(errorMessage);
-        }
-      }
-      catch (error) {
-        _showDialog('Failed to connect server.');
-      }
+      _showDialog('Registration successful!,', isSuccess: true);
     }
   }
 
@@ -199,7 +175,7 @@ void _showDialog(String message, {bool isSuccess = false}) {
                       Align(
                         alignment: Alignment.centerLeft,
                         child: Text(
-                          "Must be at least 6 characters",
+                          "Must be at least 8 characters",
                           style: TextStyle(
                             fontFamily: 'Poppins',
                             fontWeight: FontWeight.w400,

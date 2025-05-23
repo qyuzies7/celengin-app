@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
 
 class LoginPage extends StatefulWidget {
   @override
@@ -13,7 +11,7 @@ class _LoginPageState extends State<LoginPage> {
   final _passwordController = TextEditingController();
   bool _rememberMe = false;
 
-  void _login() async {
+  void _login() {
     String email = _emailController.text;
     String password = _passwordController.text;
 
@@ -22,29 +20,12 @@ class _LoginPageState extends State<LoginPage> {
       _showDialog('Invalid email');
     } else if (password.length < 6) {
       _showDialog('Password must be at least 6 characters long');
-    } else if (email.isEmpty || password.isEmpty) {
+    } else
+
+    if (email.isEmpty || password.isEmpty) {
       _showDialog('Email and password are required');
     } else {
-      try {
-        final response = await http.post(
-          Uri.parse('http://127.0.0.1:8000/api/mobile/login'),
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({
-            'email': email,
-            'password': password
-          }),
-        );
-
-        final data = jsonDecode(response.body);
-        if (response.statusCode == 200) {
-            Navigator.pushReplacementNamed(context, '/home');
-        } else {
-            _showDialog(data['message'] ?? 'Login failed. Please try again.');
-        }
-      }
-      catch (e) {
-        _showDialog('An error occurred. Please try again.');
-      }
+      Navigator.pushReplacementNamed(context, '/home');
     }
   }
 

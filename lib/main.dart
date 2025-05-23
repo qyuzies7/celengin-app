@@ -4,6 +4,9 @@ import 'register_page.dart';
 import 'home_page.dart';
 import 'home_month.dart';
 import 'home_year.dart';
+import 'add_page.dart';
+import 'chart_page.dart';
+
 
 void main() {
   runApp(CelenginApp());
@@ -25,6 +28,9 @@ class CelenginApp extends StatelessWidget {
         '/home': (context) => HomePage(),
         '/home_month': (context) => HomeMonthPage(),
         '/home_year': (context) => HomeYearPage(),
+        '/add_page': (context) => AddPage(),
+        '/chart_page': (context) => ChartPage(),
+        
       },
     );
   }

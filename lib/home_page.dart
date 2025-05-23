@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/svg.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 class HomePage extends StatefulWidget {
+  const HomePage({Key? key}) : super(key: key);
+
   @override
   _HomePageState createState() => _HomePageState();
 }
@@ -10,8 +12,7 @@ class _HomePageState extends State<HomePage> {
   DateTime startDate = DateTime(2025, 5, 11);
   int currentIndex = 0;
 
-
-  List<Map<String, dynamic>> transactions = [
+  final List<Map<String, dynamic>> transactions = [
     {'title': 'Food', 'date': DateTime(2025, 5, 12), 'amount': -40000.0},
     {'title': 'Shopping', 'date': DateTime(2025, 5, 13), 'amount': -110000.0},
     {'title': 'Salary', 'date': DateTime(2025, 5, 14), 'amount': 900000.0},
@@ -29,6 +30,8 @@ class _HomePageState extends State<HomePage> {
       currentIndex = index;
     });
 
+    if (!mounted) return;
+
     if (index == 1) {
       Navigator.pushNamed(context, '/chart_page');
     } else if (index == 2) {
@@ -37,6 +40,8 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _onTabSelected(String type) {
+    if (!mounted) return;
+
     if (type == 'monthly') {
       Navigator.pushNamed(context, '/home_month');
     } else if (type == 'yearly') {
@@ -46,16 +51,17 @@ class _HomePageState extends State<HomePage> {
 
   String get startFormatted =>
       '${startDate.day}/${startDate.month}/${startDate.year}';
+
   String get endFormatted {
-    final endDate = startDate.add(Duration(days: 6));
+    final endDate = startDate.add(const Duration(days: 6));
     return '${endDate.day}/${endDate.month}/${endDate.year}';
   }
 
   List<Map<String, dynamic>> get currentWeekTransactions {
-    final endDate = startDate.add(Duration(days: 7));
+    final endDate = startDate.add(const Duration(days: 7));
     return transactions.where((tx) {
       final txDate = tx['date'] as DateTime;
-      return txDate.isAfter(startDate.subtract(Duration(days: 1))) &&
+      return txDate.isAfter(startDate.subtract(const Duration(days: 1))) &&
           txDate.isBefore(endDate);
     }).toList();
   }
@@ -72,8 +78,7 @@ class _HomePageState extends State<HomePage> {
 
   String _formatCurrency(double amount) {
     return amount.toStringAsFixed(0).replaceAllMapped(
-        RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
-        (Match m) => '${m[1]}.');
+        RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (Match m) => '${m[1]}.');
   }
 
   IconData _getIconForTitle(String title) {
@@ -86,13 +91,13 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Color(0xFFFEF6FF),
+      backgroundColor: const Color(0xFFFEF6FF),
       body: SingleChildScrollView(
         child: Column(
           children: [
             // Header
             Container(
-              decoration: BoxDecoration(
+              decoration: const BoxDecoration(
                 color: Color(0xFF724E99),
                 borderRadius: BorderRadius.only(
                   bottomLeft: Radius.circular(32),
@@ -105,36 +110,38 @@ class _HomePageState extends State<HomePage> {
                   children: [
                     // Arrow & Date
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.start,
                       children: [
                         IconButton(
-                          icon: Icon(Icons.chevron_left, color: Colors.white),
+                          icon:
+                              const Icon(Icons.chevron_left, color: Colors.white),
                           onPressed: () => _navigateWeek(-1),
                         ),
                         const SizedBox(width: 8),
                         Column(
-                          crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
                             Text(
-                              '$startFormatted',
-                              style: TextStyle(color: Colors.white, fontSize: 12),
+                              startFormatted,
+                              style: const TextStyle(
+                                  color: Colors.white, fontSize: 12),
                             ),
                             Text(
                               endFormatted,
-                              style: TextStyle(color: Colors.white, fontSize: 12),
+                              style: const TextStyle(
+                                  color: Colors.white, fontSize: 12),
                             ),
                           ],
                         ),
                         const SizedBox(width: 8),
                         IconButton(
-                          icon: Icon(Icons.chevron_right, color: Colors.white),
+                          icon:
+                              const Icon(Icons.chevron_right, color: Colors.white),
                           onPressed: () => _navigateWeek(1),
                         ),
                       ],
                     ),
                     const SizedBox(height: 16),
                     Container(
-                      padding: EdgeInsets.all(16),
+                      padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(16),
@@ -142,9 +149,12 @@ class _HomePageState extends State<HomePage> {
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceAround,
                         children: [
-                          _buildSummaryCard('income', _formatCurrency(income), Colors.green),
-                          _buildSummaryCard('outcome', _formatCurrency(outcome), Colors.red),
-                          _buildSummaryCard('total', _formatCurrency(total), Colors.green),
+                          _buildSummaryCard(
+                              'income', _formatCurrency(income), Colors.green),
+                          _buildSummaryCard(
+                              'outcome', _formatCurrency(outcome), Colors.red),
+                          _buildSummaryCard(
+                              'total', _formatCurrency(total), Colors.green),
                         ],
                       ),
                     ),
@@ -169,7 +179,7 @@ class _HomePageState extends State<HomePage> {
             ),
             const SizedBox(height: 16),
 
-            // Progress Bar Section
+            // Progress Bar
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Column(
@@ -177,22 +187,23 @@ class _HomePageState extends State<HomePage> {
                 children: [
                   Text(
                     'Rp ${_formatCurrency(total)}',
-                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                    style:
+                        const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
                   ),
                   const SizedBox(height: 8),
                   LinearProgressIndicator(
                     value: income == 0 ? 0 : (total / income).clamp(0.0, 1.0),
                     backgroundColor: Colors.grey[300],
-                    color: Color(0xFF724E99),
+                    color: const Color(0xFF724E99),
                   ),
                   const SizedBox(height: 8),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text('Outcome: ${_formatCurrency(outcome)}',
-                          style: TextStyle(fontSize: 12, color: Colors.grey)),
+                          style: const TextStyle(fontSize: 12, color: Colors.grey)),
                       Text('Remaining: ${_formatCurrency(total)}',
-                          style: TextStyle(fontSize: 12, color: Colors.grey)),
+                          style: const TextStyle(fontSize: 12, color: Colors.grey)),
                     ],
                   ),
                 ],
@@ -215,8 +226,8 @@ class _HomePageState extends State<HomePage> {
                 child: Column(
                   children: [
                     SvgPicture.asset('assets/empty2.svg', height: 150),
-                    Text('No transactions for this week',
-                    style: TextStyle(color: Colors.grey)),
+                    const Text('No transactions for this week',
+                        style: TextStyle(color: Colors.grey)),
                   ],
                 ),
               ),
@@ -230,17 +241,18 @@ class _HomePageState extends State<HomePage> {
         onPressed: () {
           Navigator.pushNamed(context, '/add_page');
         },
-        backgroundColor: Color(0xFF724E99),
+        backgroundColor: const Color(0xFF724E99),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(28.0),
         ),
-        child: Icon(Icons.add_rounded, color: Colors.white, size: 40),
+        child: const Icon(Icons.add_rounded, color: Colors.white, size: 40),
       ),
 
-      // Bottom Nav
+      // Bottom Navigation
       bottomNavigationBar: BottomAppBar(
-        shape: CircularNotchedRectangle(),
+        shape: const CircularNotchedRectangle(),
         notchMargin: 6.0,
+        color: const Color(0xFF724E99),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Row(
@@ -252,7 +264,6 @@ class _HomePageState extends State<HomePage> {
             ],
           ),
         ),
-        color: Color(0xFF724E99),
       ),
     );
   }
@@ -260,10 +271,11 @@ class _HomePageState extends State<HomePage> {
   Widget _buildSummaryCard(String title, String amount, Color color) {
     return Column(
       children: [
-        Text(title, style: TextStyle(fontSize: 12, color: Colors.black54)),
-        SizedBox(height: 8),
+        Text(title, style: const TextStyle(fontSize: 12, color: Colors.black54)),
+        const SizedBox(height: 8),
         Text('Rp $amount',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: color)),
+            style:
+                TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: color)),
       ],
     );
   }
@@ -274,18 +286,18 @@ class _HomePageState extends State<HomePage> {
       child: GestureDetector(
         onTap: onTap,
         child: Container(
-          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           decoration: BoxDecoration(
-            color: isSelected ? Color(0xFF724E99) : Colors.transparent,
+            color: isSelected ? const Color(0xFF724E99) : Colors.transparent,
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Color(0xFF724E99)),
+            border: Border.all(color: const Color(0xFF724E99)),
           ),
           child: Text(
             title,
             style: TextStyle(
               fontWeight: FontWeight.w500,
               fontSize: 12,
-              color: isSelected ? Colors.white : Color(0xFF724E99),
+              color: isSelected ? Colors.white : const Color(0xFF724E99),
             ),
           ),
         ),
@@ -293,15 +305,16 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildTransactionItem(String title, String date, String amount, IconData icon) {
+  Widget _buildTransactionItem(
+      String title, String date, String amount, IconData icon) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Container(
-        padding: EdgeInsets.all(18),
+        padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(12),
-          boxShadow: [
+          boxShadow: const [
             BoxShadow(
               color: Colors.black12,
               blurRadius: 4,
@@ -313,21 +326,27 @@ class _HomePageState extends State<HomePage> {
           children: [
             CircleAvatar(
               backgroundColor: Colors.deepPurple[100],
-              child: Icon(icon, color: Color(0xFF724E99)),
+              child: Icon(icon, color: const Color(0xFF724E99)),
             ),
             const SizedBox(width: 16),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-                  Text(date, style: TextStyle(fontSize: 12, color: Colors.grey)),
+                  Text(title,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w600, fontSize: 14)),
+                  Text(date,
+                      style: const TextStyle(fontSize: 12, color: Colors.grey)),
                 ],
               ),
             ),
             Text(amount,
                 style: TextStyle(
-                    fontWeight: FontWeight.w600, fontSize: 14, color: amount.contains('-') ? Colors.red : Colors.green)),
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                    color:
+                        amount.contains('-') ? Colors.red : Colors.green)),
           ],
         ),
       ),
@@ -338,7 +357,8 @@ class _HomePageState extends State<HomePage> {
     return IconButton(
       iconSize: 30,
       icon: Icon(icon,
-          color: currentIndex == index ? Color(0xFFD4B1F8) : Colors.white),
+          color:
+              currentIndex == index ? const Color(0xFFD4B1F8) : Colors.white),
       onPressed: () => _onBottomNavTap(index),
     );
   }
