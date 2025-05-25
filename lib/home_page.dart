@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
 
 class HomePage extends StatefulWidget {
   const HomePage({Key? key}) : super(key: key);
@@ -91,6 +93,11 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: AppBar(
+        toolbarHeight: 0,
+        backgroundColor: const Color(0xFF724E99),
+        elevation: 0,
+      ),
       backgroundColor: const Color(0xFFFEF6FF),
       body: SingleChildScrollView(
         child: Column(
@@ -108,34 +115,50 @@ class _HomePageState extends State<HomePage> {
                 padding: const EdgeInsets.all(16),
                 child: Column(
                   children: [
-                    // Arrow & Date
+                    // Arrow & Date & Profile
                     Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        IconButton(
-                          icon:
-                              const Icon(Icons.chevron_left, color: Colors.white),
-                          onPressed: () => _navigateWeek(-1),
-                        ),
-                        const SizedBox(width: 8),
-                        Column(
+                        Row(
                           children: [
-                            Text(
-                              startFormatted,
-                              style: const TextStyle(
-                                  color: Colors.white, fontSize: 12),
+                            IconButton(
+                              icon: const Icon(Icons.chevron_left, color: Colors.white),
+                              onPressed: () => _navigateWeek(-1),
                             ),
-                            Text(
-                              endFormatted,
-                              style: const TextStyle(
-                                  color: Colors.white, fontSize: 12),
+                            const SizedBox(width: 8),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  startFormatted,
+                                  style: const TextStyle(color: Colors.white, fontSize: 12),
+                                ),
+                                Text(
+                                  endFormatted,
+                                  style: const TextStyle(color: Colors.white, fontSize: 12),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(width: 8),
+                            IconButton(
+                              icon: const Icon(Icons.chevron_right, color: Colors.white),
+                              onPressed: () => _navigateWeek(1),
                             ),
                           ],
                         ),
-                        const SizedBox(width: 8),
-                        IconButton(
-                          icon:
-                              const Icon(Icons.chevron_right, color: Colors.white),
-                          onPressed: () => _navigateWeek(1),
+                        PopupMenuButton<String>(
+                          icon: const Icon(Icons.account_circle, color: Colors.white),
+                          onSelected: (String value) {
+                            if (value == 'signout') {
+                              Navigator.pushReplacementNamed(context, '/login');
+                            }
+                          },
+                          itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+                            const PopupMenuItem<String>(
+                              value: 'signout',
+                              child: Text('Sign Out'),
+                            ),
+                          ],
                         ),
                       ],
                     ),
@@ -149,12 +172,9 @@ class _HomePageState extends State<HomePage> {
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceAround,
                         children: [
-                          _buildSummaryCard(
-                              'income', _formatCurrency(income), Colors.green),
-                          _buildSummaryCard(
-                              'outcome', _formatCurrency(outcome), Colors.red),
-                          _buildSummaryCard(
-                              'total', _formatCurrency(total), Colors.green),
+                          _buildSummaryCard('income', _formatCurrency(income), Colors.green),
+                          _buildSummaryCard('outcome', _formatCurrency(outcome), Colors.red),
+                          _buildSummaryCard('total', _formatCurrency(total), Colors.green),
                         ],
                       ),
                     ),
@@ -187,8 +207,7 @@ class _HomePageState extends State<HomePage> {
                 children: [
                   Text(
                     'Rp ${_formatCurrency(total)}',
-                    style:
-                        const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
                   ),
                   const SizedBox(height: 8),
                   LinearProgressIndicator(
@@ -274,8 +293,7 @@ class _HomePageState extends State<HomePage> {
         Text(title, style: const TextStyle(fontSize: 12, color: Colors.black54)),
         const SizedBox(height: 8),
         Text('Rp $amount',
-            style:
-                TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: color)),
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: color)),
       ],
     );
   }
@@ -305,8 +323,7 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildTransactionItem(
-      String title, String date, String amount, IconData icon) {
+  Widget _buildTransactionItem(String title, String date, String amount, IconData icon) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Container(
@@ -334,8 +351,7 @@ class _HomePageState extends State<HomePage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(title,
-                      style: const TextStyle(
-                          fontWeight: FontWeight.w600, fontSize: 14)),
+                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
                   Text(date,
                       style: const TextStyle(fontSize: 12, color: Colors.grey)),
                 ],
@@ -345,8 +361,7 @@ class _HomePageState extends State<HomePage> {
                 style: TextStyle(
                     fontWeight: FontWeight.w600,
                     fontSize: 14,
-                    color:
-                        amount.contains('-') ? Colors.red : Colors.green)),
+                    color: amount.contains('-') ? Colors.red : Colors.green)),
           ],
         ),
       ),
@@ -357,8 +372,7 @@ class _HomePageState extends State<HomePage> {
     return IconButton(
       iconSize: 30,
       icon: Icon(icon,
-          color:
-              currentIndex == index ? const Color(0xFFD4B1F8) : Colors.white),
+          color: currentIndex == index ? const Color(0xFFD4B1F8) : Colors.white),
       onPressed: () => _onBottomNavTap(index),
     );
   }

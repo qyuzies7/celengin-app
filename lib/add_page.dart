@@ -9,7 +9,7 @@ class AddPage extends StatefulWidget {
 }
 
 class _AddPageState extends State<AddPage> {
-  String? selectedType;
+  String? selectedType = 'Expenses'; // Default to Expenses
   String? selectedCategory;
   String amount = '';
   String note = '';
@@ -69,6 +69,7 @@ class _AddPageState extends State<AddPage> {
               style: const TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
+                fontFamily: 'Poppins',
               ),
             ),
       ),
@@ -76,70 +77,55 @@ class _AddPageState extends State<AddPage> {
   }
 
   Widget _buildKeypad() {
+    final List<List<String>> keypadLayout = [
+      ['Today', '+', 'check'],
+      ['×', '7', '8', '9'],
+      ['−', '4', '5', '6'],
+      ['÷', '1', '2', '3'],
+      ['delete', '.', '0', '='],
+    ];
+
     return Container(
       color: const Color(0xFF724E99),
       padding: const EdgeInsets.symmetric(vertical: 10),
       child: Column(
-        children: [
-          Row(
-            children: [
-              Expanded(
+        children: keypadLayout.map((row) {
+          return Row(
+            children: row.map((label) {
+              return Expanded(
                 child: _buildKeypadButton(
-                  'Today',
+                  label,
                   onTap: () async {
-                    final pickedDate = await showDatePicker(
-                      context: context,
-                      initialDate: DateTime.now(),
-                      firstDate: DateTime(2000),
-                      lastDate: DateTime(2100),
-                    );
-                    if (pickedDate != null) {
-                      setState(() {
-                        note = '${pickedDate.day}/${pickedDate.month}/${pickedDate.year}';
-                      });
+                    if (label == 'Today') {
+                      final pickedDate = await showDatePicker(
+                        context: context,
+                        initialDate: DateTime.now(),
+                        firstDate: DateTime(2000),
+                        lastDate: DateTime(2100),
+                      );
+                      if (pickedDate != null) {
+                        setState(() {
+                          note = '${pickedDate.day}/${pickedDate.month}/${pickedDate.year}';
+                        });
+                      }
+                    } else if (label == 'check') {
+                      _onConfirmPressed();
+                    } else if (label == 'delete') {
+                      _onDeletePressed();
+                    } else {
+                      _onNumberPressed(label);
                     }
                   },
+                  icon: label == 'check'
+                      ? const Icon(Icons.check, color: Colors.black)
+                      : label == 'delete'
+                          ? const Icon(Icons.backspace, color: Colors.black)
+                          : null,
                 ),
-              ),
-              Expanded(child: _buildKeypadButton('+', onTap: () => _onNumberPressed('+'))),
-              Expanded(
-                child: _buildKeypadButton(
-                  '',
-                  onTap: _onConfirmPressed,
-                  icon: const Icon(Icons.check, color: Colors.black),
-                ),
-              ),
-            ],
-          ),
-          Row(
-            children: ['×', '7', '8', '9']
-                .map((label) => Expanded(child: _buildKeypadButton(label, onTap: () => _onNumberPressed(label))))
-                .toList(),
-          ),
-          Row(
-            children: ['÷', '4', '5', '6']
-                .map((label) => Expanded(child: _buildKeypadButton(label, onTap: () => _onNumberPressed(label))))
-                .toList(),
-          ),
-          Row(
-            children: ['-', '1', '2', '3']
-                .map((label) => Expanded(child: _buildKeypadButton(label, onTap: () => _onNumberPressed(label))))
-                .toList(),
-          ),
-          Row(
-            children: ['+', '.', '0', 'x']
-                .map((label) => Expanded(
-                      child: _buildKeypadButton(label, onTap: () {
-                        if (label == 'x') {
-                          _onDeletePressed();
-                        } else {
-                          _onNumberPressed(label);
-                        }
-                      }),
-                    ))
-                .toList(),
-          ),
-        ],
+              );
+            }).toList(),
+          );
+        }).toList(),
       ),
     );
   }
@@ -175,6 +161,7 @@ class _AddPageState extends State<AddPage> {
                     child: Text(
                       type,
                       style: TextStyle(
+                        fontFamily: 'Poppins',
                         color: isSelected ? Colors.white : Colors.black,
                         fontWeight: FontWeight.bold,
                       ),
@@ -225,6 +212,7 @@ class _AddPageState extends State<AddPage> {
                                   category['label'],
                                   style: TextStyle(
                                     fontSize: 12,
+                                    fontFamily: 'Poppins',
                                     color: isSelected ? Colors.white : Colors.black,
                                   ),
                                 ),
@@ -244,7 +232,7 @@ class _AddPageState extends State<AddPage> {
                 child: TextField(
                   decoration: InputDecoration(
                     labelText: 'Note',
-                    labelStyle: const TextStyle(color: Colors.black),
+                    labelStyle: const TextStyle(color: Colors.black, fontFamily: 'Poppins'),
                     filled: true,
                     fillColor: Colors.white,
                     border: OutlineInputBorder(
@@ -260,7 +248,7 @@ class _AddPageState extends State<AddPage> {
                       borderSide: const BorderSide(color: Color(0xFF724E99), width: 2),
                     ),
                   ),
-                  style: const TextStyle(color: Colors.black),
+                  style: const TextStyle(color: Colors.black, fontFamily: 'Poppins'),
                   onChanged: (val) => setState(() => note = val),
                 ),
               ),
@@ -276,6 +264,7 @@ class _AddPageState extends State<AddPage> {
                       fontSize: 24,
                       fontWeight: FontWeight.bold,
                       color: Color(0xFF724E99),
+                      fontFamily: 'Poppins',
                     ),
                   ),
                 ),
