@@ -8,7 +8,6 @@ import 'add_page.dart';
 import 'chart_page.dart';
 import 'budget_page.dart';
 
-
 void main() {
   runApp(CelenginApp());
 }
@@ -22,8 +21,9 @@ class CelenginApp extends StatelessWidget {
       theme: ThemeData(
         primarySwatch: Colors.deepPurple,
       ),
-      initialRoute: '/',
+      initialRoute: '/', // <- tetap digunakan
       routes: {
+        '/': (context) => LoginPage(), // <- ini ditambahkan untuk mengatasi error
         '/login': (context) => LoginPage(),
         '/register': (context) => RegisterPage(),
         '/home': (context) => HomePage(),
@@ -32,7 +32,6 @@ class CelenginApp extends StatelessWidget {
         '/add_page': (context) => AddPage(),
         '/chart_page': (context) => ChartPage(),
         '/budget_page': (context) => BudgetPage(),
-        
       },
     );
   }

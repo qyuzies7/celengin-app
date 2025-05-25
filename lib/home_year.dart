@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'widgets/useravatar_menu.dart'; 
 
 class HomeYearPage extends StatefulWidget {
+  const HomeYearPage({Key? key}) : super(key: key);
+
   @override
   _HomeYearPageState createState() => _HomeYearPageState();
 }
@@ -37,13 +40,13 @@ class _HomeYearPageState extends State<HomeYearPage> {
         .toList();
 
     return Scaffold(
-      backgroundColor: Color(0xFFFEF6FF),
+      backgroundColor: const Color(0xFFFEF6FF),
       body: SingleChildScrollView(
         child: Column(
           children: [
             // Header
             Container(
-              decoration: BoxDecoration(
+              decoration: const BoxDecoration(
                 color: Color(0xFF724E99),
                 borderRadius: BorderRadius.vertical(bottom: Radius.circular(32)),
               ),
@@ -53,50 +56,37 @@ class _HomeYearPageState extends State<HomeYearPage> {
                   children: [
                     // Arrow, Year, Profile Icon Menu
                     Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Expanded(
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Row(
-                                children: [
-                                  IconButton(
-                                    icon: Icon(Icons.chevron_left, color: Colors.white),
-                                    onPressed: () => _navigateYear(-1),
-                                  ),
-                                  Text(
-                                    currentYear.toString(),
-                                    style: TextStyle(color: Colors.white, fontSize: 16),
-                                  ),
-                                  IconButton(
-                                    icon: Icon(Icons.chevron_right, color: Colors.white),
-                                    onPressed: () => _navigateYear(1),
-                                  ),
-                                ],
-                              ),
-                              PopupMenuButton<String>(
-                                onSelected: (value) {
-                                  if (value == 'signout') {
-                                    Navigator.pushReplacementNamed(context, '/login');
-                                  }
-                                },
-                                icon: Icon(Icons.account_circle, color: Colors.white),
-                                itemBuilder: (context) => [
-                                  PopupMenuItem(
-                                    value: 'signout',
-                                    child: Text('Sign Out'),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
+                        Row(
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.chevron_left, color: Colors.white),
+                              onPressed: () => _navigateYear(-1),
+                            ),
+                            Text(
+                              currentYear.toString(),
+                              style: const TextStyle(color: Colors.white, fontSize: 16),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.chevron_right, color: Colors.white),
+                              onPressed: () => _navigateYear(1),
+                            ),
+                          ],
+                        ),
+
+                       // Pakai UserAvatarMenu di sini
+                        UserAvatarMenu(
+                          onSignOut: () {
+                            Navigator.pushReplacementNamed(context, '/');
+                          },
                         ),
                       ],
                     ),
 
                     const SizedBox(height: 16),
                     Container(
-                      padding: EdgeInsets.all(16),
+                      padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(16),
@@ -138,8 +128,8 @@ class _HomeYearPageState extends State<HomeYearPage> {
                     child: Column(
                       children: [
                         SvgPicture.asset('assets/empty2.svg', height: 150),
-                        SizedBox(height: 12),
-                        Text(
+                        const SizedBox(height: 12),
+                        const Text(
                           'No transactions for this year',
                           style: TextStyle(color: Colors.grey),
                         ),
@@ -166,15 +156,15 @@ class _HomeYearPageState extends State<HomeYearPage> {
         onPressed: () {
           Navigator.pushNamed(context, '/add_page');
         },
-        backgroundColor: Color(0xFF724E99),
+        backgroundColor: const Color(0xFF724E99),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
-        child: Icon(Icons.add_rounded, color: Colors.white, size: 40),
+        child: const Icon(Icons.add_rounded, color: Colors.white, size: 40),
       ),
 
       bottomNavigationBar: BottomAppBar(
-        shape: CircularNotchedRectangle(),
+        shape: const CircularNotchedRectangle(),
         notchMargin: 6.0,
-        color: Color(0xFF724E99),
+        color: const Color(0xFF724E99),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Row(
@@ -193,8 +183,8 @@ class _HomeYearPageState extends State<HomeYearPage> {
   Widget _buildSummaryCard(String title, String amount, Color color) {
     return Column(
       children: [
-        Text(title, style: TextStyle(fontSize: 12, color: Colors.black54)),
-        SizedBox(height: 8),
+        Text(title, style: const TextStyle(fontSize: 12, color: Colors.black54)),
+        const SizedBox(height: 8),
         Text(amount, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: color)),
       ],
     );
@@ -206,18 +196,18 @@ class _HomeYearPageState extends State<HomeYearPage> {
       child: GestureDetector(
         onTap: onTap,
         child: Container(
-          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           decoration: BoxDecoration(
-            color: isSelected ? Color(0xFF724E99) : Colors.transparent,
+            color: isSelected ? const Color(0xFF724E99) : Colors.transparent,
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Color(0xFF724E99)),
+            border: Border.all(color: const Color(0xFF724E99)),
           ),
           child: Text(
             title,
             style: TextStyle(
               fontWeight: FontWeight.w500,
               fontSize: 12,
-              color: isSelected ? Colors.white : Color(0xFF724E99),
+              color: isSelected ? Colors.white : const Color(0xFF724E99),
             ),
           ),
         ),
@@ -229,29 +219,29 @@ class _HomeYearPageState extends State<HomeYearPage> {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Container(
-        padding: EdgeInsets.all(18),
+        padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(12),
-          boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, 2))],
+          boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, 2))],
         ),
         child: Row(
           children: [
             CircleAvatar(
               backgroundColor: Colors.deepPurple[100],
-              child: Icon(icon, color: Color(0xFF724E99)),
+              child: Icon(icon, color: const Color(0xFF724E99)),
             ),
             const SizedBox(width: 16),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-                  Text(date, style: TextStyle(fontSize: 12, color: Colors.grey)),
+                  Text(title, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                  Text(date, style: const TextStyle(fontSize: 12, color: Colors.grey)),
                 ],
               ),
             ),
-            Text(amount, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: Colors.red)),
+            Text(amount, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: Colors.red)),
           ],
         ),
       ),
@@ -261,7 +251,7 @@ class _HomeYearPageState extends State<HomeYearPage> {
   Widget _buildBottomNavItem(IconData icon, int index) {
     return IconButton(
       iconSize: 30,
-      icon: Icon(icon, color: index == 0 ? Color(0xFFD4B1F8) : Colors.white),
+      icon: Icon(icon, color: index == 0 ? const Color(0xFFD4B1F8) : Colors.white),
       onPressed: () {
         if (index == 0) {
           Navigator.pushNamed(context, '/home');

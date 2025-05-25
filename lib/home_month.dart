@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/svg.dart';
+import 'widgets/useravatar_menu.dart';  
 
 class HomeMonthPage extends StatefulWidget {
   @override
@@ -9,7 +10,6 @@ class HomeMonthPage extends StatefulWidget {
 class _HomeMonthPageState extends State<HomeMonthPage> {
   DateTime currentMonth = DateTime.now();
 
-  // Simulasi data transaksi bulanan
   final Map<String, List<Map<String, dynamic>>> monthlyTransactions = {
     '05-2025': [
       {'title': 'Transport', 'date': '2/5/2025', 'amount': -60000, 'icon': Icons.directions_bus},
@@ -59,7 +59,6 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
       body: SingleChildScrollView(
         child: Column(
           children: [
-            // Header
             Container(
               decoration: BoxDecoration(
                 color: Color(0xFF724E99),
@@ -91,20 +90,12 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
                             ),
                           ],
                         ),
-                       
-                        PopupMenuButton<String>(
-                          icon: const Icon(Icons.account_circle, color: Colors.white),
-                          onSelected: (String value) {
-                            if (value == 'signout') {
-                              Navigator.pushReplacementNamed(context, '/login');
-                            }
+
+                        // Pakai UserAvatarMenu di sini
+                        UserAvatarMenu(
+                          onSignOut: () {
+                            Navigator.pushReplacementNamed(context, '/');
                           },
-                          itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
-                            const PopupMenuItem<String>(
-                              value: 'signout',
-                              child: Text('Sign Out'),
-                            ),
-                          ],
                         ),
                       ],
                     ),
@@ -131,7 +122,6 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
 
             const SizedBox(height: 16),
 
-            // Tabs
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Row(
@@ -147,7 +137,6 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
 
             const SizedBox(height: 16),
 
-            // Progress Indicator
             if (income > 0) ...[
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -178,7 +167,6 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
               const SizedBox(height: 16),
             ],
 
-            // Transaction List
             if (currentTransactions.isEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 32),

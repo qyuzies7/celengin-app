@@ -14,6 +14,7 @@ class _BudgetPageState extends State<BudgetPage> {
   int weeklyBudget = 0;
   int monthlyBudget = 0;
   String currentMode = ''; // 'weekly' atau 'monthly'
+  int _selectedIndex = 2; // Budget tab index
 
   void _onNumberPressed(String value) {
     setState(() {
@@ -66,6 +67,29 @@ class _BudgetPageState extends State<BudgetPage> {
       return eval.toStringAsFixed(eval.truncateToDouble() == eval ? 0 : 2);
     } catch (e) {
       return 'Error';
+    }
+  }
+
+  void _onItemTapped(int index) {
+    setState(() {
+      _selectedIndex = index;
+    });
+
+    switch (index) {
+      case 0:
+        Navigator.pushReplacementNamed(context, '/home_month');
+        break;
+      case 1:
+        Navigator.pushReplacementNamed(context, '/home_year');
+        break;
+      case 2:
+        break; // stay on BudgetPage
+      case 3:
+        Navigator.pushReplacementNamed(context, '/chart_page');
+        break;
+      case 4:
+        Navigator.pushReplacementNamed(context, '/add_page');
+        break;
     }
   }
 
@@ -242,6 +266,29 @@ class _BudgetPageState extends State<BudgetPage> {
           if (currentMode.isNotEmpty) _buildKeypad(),
         ],
       ),
+     bottomNavigationBar: BottomNavigationBar(
+  currentIndex: _selectedIndex, // pakai _selectedIndex sesuai deklarasi
+  onTap: _onItemTapped,         // pakai _onItemTapped yang kamu buat
+  backgroundColor: const Color(0xFF724E99),
+  selectedItemColor: const Color(0xFFD4B1F8),
+  unselectedItemColor: Colors.white,
+  selectedLabelStyle: const TextStyle(fontFamily: 'Poppins'),
+  unselectedLabelStyle: const TextStyle(fontFamily: 'Poppins'),
+  items: const [
+    BottomNavigationBarItem(
+      icon: Icon(Icons.home),
+      label: 'Home',
+    ),
+    BottomNavigationBarItem(
+      icon: Icon(Icons.pie_chart),
+      label: 'Chart',
+    ),
+    BottomNavigationBarItem(
+      icon: Icon(Icons.account_balance_wallet),
+      label: 'Budgeting',
+    ),
+  ],
+),
     );
   }
 }
