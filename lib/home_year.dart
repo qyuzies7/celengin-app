@@ -51,24 +51,49 @@ class _HomeYearPageState extends State<HomeYearPage> {
                 padding: const EdgeInsets.all(16),
                 child: Column(
                   children: [
-                    // Arrow & Year
+                    // Arrow, Year, Profile Icon Menu
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.start,
                       children: [
-                        IconButton(
-                          icon: Icon(Icons.chevron_left, color: Colors.white),
-                          onPressed: () => _navigateYear(-1),
-                        ),
-                        Text(
-                          currentYear.toString(),
-                          style: TextStyle(color: Colors.white, fontSize: 16),
-                        ),
-                        IconButton(
-                          icon: Icon(Icons.chevron_right, color: Colors.white),
-                          onPressed: () => _navigateYear(1),
+                        Expanded(
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Row(
+                                children: [
+                                  IconButton(
+                                    icon: Icon(Icons.chevron_left, color: Colors.white),
+                                    onPressed: () => _navigateYear(-1),
+                                  ),
+                                  Text(
+                                    currentYear.toString(),
+                                    style: TextStyle(color: Colors.white, fontSize: 16),
+                                  ),
+                                  IconButton(
+                                    icon: Icon(Icons.chevron_right, color: Colors.white),
+                                    onPressed: () => _navigateYear(1),
+                                  ),
+                                ],
+                              ),
+                              PopupMenuButton<String>(
+                                onSelected: (value) {
+                                  if (value == 'signout') {
+                                    Navigator.pushReplacementNamed(context, '/login');
+                                  }
+                                },
+                                icon: Icon(Icons.account_circle, color: Colors.white),
+                                itemBuilder: (context) => [
+                                  PopupMenuItem(
+                                    value: 'signout',
+                                    child: Text('Sign Out'),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
                         ),
                       ],
                     ),
+
                     const SizedBox(height: 16),
                     Container(
                       padding: EdgeInsets.all(16),
@@ -239,7 +264,7 @@ class _HomeYearPageState extends State<HomeYearPage> {
       icon: Icon(icon, color: index == 0 ? Color(0xFFD4B1F8) : Colors.white),
       onPressed: () {
         if (index == 0) {
-          Navigator.pushNamed(context, '/home_page');
+          Navigator.pushNamed(context, '/home');
         } else if (index == 1) {
           Navigator.pushNamed(context, '/chart_page');
         } else if (index == 2) {

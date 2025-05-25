@@ -73,18 +73,38 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
                 child: Column(
                   children: [
                     Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        IconButton(
-                          icon: Icon(Icons.chevron_left, color: Colors.white),
-                          onPressed: () => _navigateMonth(-1),
+                        Row(
+                          children: [
+                            IconButton(
+                              icon: Icon(Icons.chevron_left, color: Colors.white),
+                              onPressed: () => _navigateMonth(-1),
+                            ),
+                            Text(
+                              monthFormatted,
+                              style: TextStyle(color: Colors.white, fontSize: 16),
+                            ),
+                            IconButton(
+                              icon: Icon(Icons.chevron_right, color: Colors.white),
+                              onPressed: () => _navigateMonth(1),
+                            ),
+                          ],
                         ),
-                        Text(
-                          monthFormatted,
-                          style: TextStyle(color: Colors.white, fontSize: 16),
-                        ),
-                        IconButton(
-                          icon: Icon(Icons.chevron_right, color: Colors.white),
-                          onPressed: () => _navigateMonth(1),
+                       
+                        PopupMenuButton<String>(
+                          icon: const Icon(Icons.account_circle, color: Colors.white),
+                          onSelected: (String value) {
+                            if (value == 'signout') {
+                              Navigator.pushReplacementNamed(context, '/login');
+                            }
+                          },
+                          itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+                            const PopupMenuItem<String>(
+                              value: 'signout',
+                              child: Text('Sign Out'),
+                            ),
+                          ],
                         ),
                       ],
                     ),
@@ -166,7 +186,7 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
                   children: [
                     SvgPicture.asset('assets/empty2.svg', height: 150),
                     Text('No transactions for this month',
-                    style: TextStyle(color: Colors.grey)),
+                        style: TextStyle(color: Colors.grey)),
                   ],
                 ),
               )
@@ -298,7 +318,7 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
           color: index == 0 ? Color(0xFFD4B1F8) : Colors.white),
       onPressed: () {
         if (index == 0) {
-          Navigator.pushNamed(context, '/');
+          Navigator.pushNamed(context, '/home');
         } else if (index == 1) {
           Navigator.pushNamed(context, '/chart_page');
         } else if (index == 2) {

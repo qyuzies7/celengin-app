@@ -244,7 +244,7 @@ class ChartPage extends StatelessWidget {
         currentIndex: 1,
         onTap: (index) {
           if (index == 0) {
-            Navigator.pushNamed(context, '/');
+            Navigator.pushNamed(context, '/home');
           } else if (index == 1) {
             Navigator.pushNamed(context, '/chart_page');
           } else if (index == 2) {
