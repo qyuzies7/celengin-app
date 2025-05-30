@@ -1,7 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+// import 'package:shared_preferences/shared_preferences.dart'; // Tidak diperlukan di sini karena token tidak disimpan setelah register
+
+const apiBaseUrl = 'http://10.0.2.2:8000/api';
 
 class RegisterPage extends StatefulWidget {
+  const RegisterPage({super.key});
+
   @override
   State<RegisterPage> createState() => _RegisterPageState();
 }
@@ -11,110 +18,157 @@ class _RegisterPageState extends State<RegisterPage> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
+  bool _isLoading = false;
+  bool _obscurePassword = true;
+  bool _obscureConfirmPassword = true;
 
-  void _register() {
-    String name = _fullNameController.text;
-    String email = _emailController.text;
-    String password = _passwordController.text;
-    String confirmPassword = _confirmPasswordController.text;
+  Future<void> _register() async {
+    setState(() {
+      _isLoading = true;
+    });
 
-    if (name.isEmpty || email.isEmpty || password.isEmpty || confirmPassword.isEmpty) {
+    final nama = _fullNameController.text;
+    final email = _emailController.text;
+    final password = _passwordController.text;
+    final confirmPassword = _confirmPasswordController.text;
+
+    if (nama.isEmpty || email.isEmpty || password.isEmpty || confirmPassword.isEmpty) {
       _showDialog('All fields are required.');
-    } else if (password.length < 8) {
-      _showDialog('Password must be at least 8 characters.');
+    } else if (password.length < 6) {
+      _showDialog('Password must be at least 6 characters.');
     } else if (password != confirmPassword) {
       _showDialog('Passwords do not match.');
     } else {
-      _showDialog('Registration successful!,', isSuccess: true);
+      try {
+        final response = await http.post(
+          Uri.parse('$apiBaseUrl/mobile/register'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'nama': nama,
+            'email': email,
+            'password': password,
+            'password_confirmation': confirmPassword,
+          }),
+        );
+        debugPrint('Register response: ${response.statusCode} - ${response.body}');
+
+        final data = jsonDecode(response.body);
+        if (response.statusCode == 200 || response.statusCode == 201) {
+          // Token tidak disimpan di sini karena user akan login manual nanti
+          if (mounted) {
+            _showDialog('Registration successful!', isSuccess: true);
+            // Tidak ada pushReplacementNamed ke /home di sini
+          }
+        } else {
+          if (mounted) {
+            _showDialog(data['message'] ?? 'Registration failed.');
+          }
+        }
+      } catch (e) {
+        if (mounted) {
+          _showDialog('Failed to connect to server: $e');
+        }
+        debugPrint('Register error: $e');
+      } finally {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
-void _showDialog(String message, {bool isSuccess = false}) {
-  showDialog(
-    context: context,
-    builder: (ctx) => Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      child: Stack(
-        clipBehavior: Clip.none,
-        alignment: Alignment.topCenter,
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const SizedBox(height: 50), // Space for the icon
-                Text(
-                  isSuccess ? "Success!" : "Error",
-                  style: TextStyle(
-                    fontFamily: 'Poppins',
-                    fontWeight: FontWeight.w700,
-                    fontSize: 20,
-                    color: isSuccess ? Color(0xFF724E99) : Colors.red,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  message,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontFamily: 'Poppins',
-                    fontWeight: FontWeight.w400,
-                    fontSize: 14,
-                    color: Colors.black,
-                  ),
-                ),
-                const SizedBox(height: 20),
-                ElevatedButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: isSuccess ? Color(0xFF724E99) : Colors.red,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
-                  child: Text(
-                    'OK',
+  void _showDialog(String message, {bool isSuccess = false}) {
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: Stack(
+          clipBehavior: Clip.none,
+          alignment: Alignment.topCenter,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(height: 50),
+                  Text(
+                    isSuccess ? "Success!" : "Error",
                     style: TextStyle(
                       fontFamily: 'Poppins',
-                      fontWeight: FontWeight.w600,
-                      fontSize: 14,
-                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 20,
+                      color: isSuccess ? const Color(0xFF724E99) : Colors.red,
                     ),
                   ),
-                ),
-              ],
-            ),
-          ),
-          Positioned(
-            top: -40,
-            child: CircleAvatar(
-              radius: 40,
-              backgroundColor: isSuccess ? Color(0xFF724E99) : Colors.red,
-              child: Icon(
-                isSuccess ? Icons.check : Icons.close,
-                color: Colors.white,
-                size: 40,
+                  const SizedBox(height: 10),
+                  Text(
+                    message,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontFamily: 'Poppins',
+                      fontWeight: FontWeight.w400,
+                      fontSize: 14,
+                      color: Colors.black,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  ElevatedButton(
+                    onPressed: () {
+                      Navigator.pop(ctx); // Tutup dialog
+                      if (isSuccess && mounted) {
+                        Navigator.pushReplacementNamed(context, '/login'); // Redirect ke login kalau sukses
+                      }
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: isSuccess ? const Color(0xFF724E99) : Colors.red,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    child: const Text(
+                      'OK',
+                      style: TextStyle(
+                        fontFamily: 'Poppins',
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
-          ),
-        ],
+            Positioned(
+              top: -40,
+              child: CircleAvatar(
+                radius: 40,
+                backgroundColor: isSuccess ? const Color(0xFF724E99) : Colors.red,
+                child: Icon(
+                  isSuccess ? Icons.check : Icons.close,
+                  color: Colors.white,
+                  size: 40,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
-    ),
-  );
-}
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Color(0xFFFEF6FF),
+      backgroundColor: const Color(0xFFFEF6FF),
       body: Center(
         child: SingleChildScrollView(
-          padding: EdgeInsets.symmetric(horizontal: 24),
+          padding: const EdgeInsets.symmetric(horizontal: 24),
           child: Column(
             children: [
               SvgPicture.asset('assets/piggy_bank.svg', height: 132),
               const SizedBox(height: 20),
-              Text(
+              const Text(
                 "CELENGIN",
                 style: TextStyle(
                   fontFamily: 'Poppins',
@@ -131,7 +185,7 @@ void _showDialog(String message, {bool isSuccess = false}) {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
+                      const Text(
                         "Sign up",
                         style: TextStyle(
                           fontFamily: 'Poppins',
@@ -139,15 +193,12 @@ void _showDialog(String message, {bool isSuccess = false}) {
                           fontSize: 23,
                         ),
                       ),
-                      Divider( // Garis bawah
-                        color: Colors.black,
-                        thickness: 1,
-                      ),
+                      const Divider(color: Colors.black, thickness: 1),
                       const SizedBox(height: 12),
                       TextField(
                         controller: _fullNameController,
-                        decoration: InputDecoration(labelText: 'Full name'),
-                        style: TextStyle(
+                        decoration: const InputDecoration(labelText: 'Full name'),
+                        style: const TextStyle(
                           fontFamily: 'Poppins',
                           fontWeight: FontWeight.w300,
                           fontSize: 13,
@@ -155,8 +206,8 @@ void _showDialog(String message, {bool isSuccess = false}) {
                       ),
                       TextField(
                         controller: _emailController,
-                        decoration: InputDecoration(labelText: 'Email'),
-                        style: TextStyle(
+                        decoration: const InputDecoration(labelText: 'Email'),
+                        style: const TextStyle(
                           fontFamily: 'Poppins',
                           fontWeight: FontWeight.w300,
                           fontSize: 13,
@@ -164,18 +215,31 @@ void _showDialog(String message, {bool isSuccess = false}) {
                       ),
                       TextField(
                         controller: _passwordController,
-                        decoration: InputDecoration(labelText: 'Password'),
-                        obscureText: true,
-                        style: TextStyle(
+                        decoration: InputDecoration(
+                          labelText: 'Password',
+                          suffixIcon: IconButton(
+                            icon: Icon(
+                              _obscurePassword ? Icons.visibility : Icons.visibility_off,
+                              color: Colors.grey,
+                            ),
+                            onPressed: () {
+                              setState(() {
+                                _obscurePassword = !_obscurePassword;
+                              });
+                            },
+                          ),
+                        ),
+                        obscureText: _obscurePassword,
+                        style: const TextStyle(
                           fontFamily: 'Poppins',
                           fontWeight: FontWeight.w300,
                           fontSize: 13,
                         ),
                       ),
-                      Align(
+                      const Align(
                         alignment: Alignment.centerLeft,
                         child: Text(
-                          "Must be at least 8 characters",
+                          "Must be at least 6 characters",
                           style: TextStyle(
                             fontFamily: 'Poppins',
                             fontWeight: FontWeight.w400,
@@ -185,9 +249,22 @@ void _showDialog(String message, {bool isSuccess = false}) {
                       ),
                       TextField(
                         controller: _confirmPasswordController,
-                        decoration: InputDecoration(labelText: 'Confirm Password'),
-                        obscureText: true,
-                        style: TextStyle(
+                        decoration: InputDecoration(
+                          labelText: 'Confirm Password',
+                          suffixIcon: IconButton(
+                            icon: Icon(
+                              _obscureConfirmPassword ? Icons.visibility : Icons.visibility_off,
+                              color: Colors.grey,
+                            ),
+                            onPressed: () {
+                              setState(() {
+                                _obscureConfirmPassword = !_obscureConfirmPassword;
+                              });
+                            },
+                          ),
+                        ),
+                        obscureText: _obscureConfirmPassword,
+                        style: const TextStyle(
                           fontFamily: 'Poppins',
                           fontWeight: FontWeight.w300,
                           fontSize: 13,
@@ -195,28 +272,37 @@ void _showDialog(String message, {bool isSuccess = false}) {
                       ),
                       const SizedBox(height: 12),
                       ElevatedButton(
-                        onPressed: _register,
-                        child: Text(
-                          "Create Account",
-                          style: TextStyle(
-                            fontFamily: 'Poppins',
-                            fontWeight: FontWeight.w600,
-                            fontSize: 15,
-                            color: Colors.white, // Teks putih
-                          ),
-                        ),
+                        onPressed: _isLoading ? null : _register,
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Color(0xFF724E99),
-                          minimumSize: Size.fromHeight(40),
+                          backgroundColor: const Color(0xFF724E99),
+                          minimumSize: const Size.fromHeight(40),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                         ),
+                        child: _isLoading
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Text(
+                                "Create Account",
+                                style: TextStyle(
+                                  fontFamily: 'Poppins',
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 15,
+                                  color: Colors.white,
+                                ),
+                              ),
                       ),
                       const SizedBox(height: 8),
                       Center(
                         child: TextButton(
-                          onPressed: () => Navigator.pushNamed(context, '/'),
+                          onPressed: () => Navigator.pushNamed(context, '/login'),
                           child: RichText(
-                            text: TextSpan(
+                            text: const TextSpan(
                               text: "Already have an account? ",
                               style: TextStyle(
                                 fontFamily: 'Poppins',
@@ -231,18 +317,18 @@ void _showDialog(String message, {bool isSuccess = false}) {
                                     fontFamily: 'Poppins',
                                     fontWeight: FontWeight.w600,
                                     fontSize: 12,
-                                    color: Color(0xFF724E99), // Warna ungu
+                                    color: Color(0xFF724E99),
                                   ),
                                 ),
                               ],
                             ),
                           ),
                         ),
-                      )
+                      ),
                     ],
                   ),
                 ),
-              )
+              ),
             ],
           ),
         ),

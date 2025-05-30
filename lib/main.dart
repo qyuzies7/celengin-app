@@ -5,14 +5,17 @@ import 'home_page.dart';
 import 'home_month.dart';
 import 'home_year.dart';
 import 'add_page.dart';
+import 'edit_page.dart';
 import 'chart_page.dart';
 import 'budget_page.dart';
 
 void main() {
-  runApp(CelenginApp());
+  runApp(const CelenginApp());
 }
 
 class CelenginApp extends StatelessWidget {
+  const CelenginApp({super.key});
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -20,18 +23,19 @@ class CelenginApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         primarySwatch: Colors.deepPurple,
+        fontFamily: 'Poppins',
       ),
-      initialRoute: '/', // <- tetap digunakan
+      initialRoute: '/login',
       routes: {
-        '/': (context) => LoginPage(), // <- ini ditambahkan untuk mengatasi error
-        '/login': (context) => LoginPage(),
-        '/register': (context) => RegisterPage(),
-        '/home': (context) => HomePage(),
-        '/home_month': (context) => HomeMonthPage(),
-        '/home_year': (context) => HomeYearPage(),
-        '/add_page': (context) => AddPage(),
-        '/chart_page': (context) => ChartPage(),
-        '/budget_page': (context) => BudgetPage(),
+        '/login': (context) => const LoginPage(),
+        '/register': (context) => const RegisterPage(),
+        '/home': (context) => const HomePage(),
+        '/home_month': (context) => const HomeMonthPage(),
+        '/home_year': (context) => const HomeYearPage(),
+        '/add_page': (context) => const AddPage(),
+        '/edit_page': (context) => const EditPage(),
+        '/chart_page': (context) => const ChartPage(),
+        '/budget_page': (context) => const BudgetPage(),
       },
     );
   }

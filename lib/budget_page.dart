@@ -1,6 +1,20 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
-import 'package:math_expressions/math_expressions.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+const apiBaseUrl = 'http://10.0.2.2:8000/api';
+
+Future<String?> getTokenFromStorage() async {
+  final prefs = await SharedPreferences.getInstance();
+  return prefs.getString('token');
+}
+
+Future<int?> getUserIdFromStorage() async {
+  final prefs = await SharedPreferences.getInstance();
+  return prefs.getInt('userId');
+}
 
 class BudgetPage extends StatefulWidget {
   const BudgetPage({super.key});
@@ -13,87 +27,409 @@ class _BudgetPageState extends State<BudgetPage> {
   String amount = '';
   int weeklyBudget = 0;
   int monthlyBudget = 0;
-  String currentMode = ''; // 'weekly' atau 'monthly'
-  int _selectedIndex = 2; // Budget tab index
+  String currentMode = ''; // "weekly" atau "monthly"
+  int _selectedIndex = 2;
+  final NumberFormat _numberFormat = NumberFormat('#,##0', 'id_ID');
+
+  @override
+  void initState() {
+    super.initState();
+    fetchBudgets();
+  }
+
+  Future<void> fetchBudgets() async {
+    final token = await getTokenFromStorage();
+    if (token == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No token found, please login again')),
+        );
+      }
+      return;
+    }
+    final now = DateTime.now();
+    final weekStart = DateTime(now.year, now.month, now.day - (now.weekday - 1));
+    final weekEnd = weekStart.add(const Duration(days: 6));
+    final monthStart = DateTime(now.year, now.month, 1);
+    final monthEnd = DateTime(now.year, now.month + 1, 0);
+    final prefs = await SharedPreferences.getInstance();
+    final weekBudgetKey = 'budget_weekly_${now.year}_${_getWeekNumber(now)}';
+    final monthBudgetKey = 'budget_monthly_${now.year}_${now.month}';
+
+    try {
+      final response = await http.get(
+        Uri.parse('$apiBaseUrl/plan'),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+      if (response.statusCode == 200) {
+        final List<dynamic> plans = jsonDecode(response.body);
+        final weekly = plans.firstWhere(
+          (p) =>
+              p['periode_type'] == 'weekly' &&
+              _sameDate(DateTime.parse(p['periode_start']), weekStart) &&
+              _sameDate(DateTime.parse(p['periode_end']), weekEnd),
+          orElse: () => null,
+        );
+        final monthly = plans.firstWhere(
+          (p) =>
+              p['periode_type'] == 'monthly' &&
+              _sameDate(DateTime.parse(p['periode_start']), monthStart) &&
+              _sameDate(DateTime.parse(p['periode_end']), monthEnd),
+          orElse: () => null,
+        );
+        setState(() {
+          weeklyBudget = weekly != null ? int.tryParse(weekly['nominal'].toString()) ?? 0 : 0;
+          monthlyBudget = monthly != null ? int.tryParse(monthly['nominal'].toString()) ?? 0 : 0;
+          if (weekly != null) {
+            prefs.setInt(weekBudgetKey, weeklyBudget);
+          } else {
+            prefs.remove(weekBudgetKey);
+          }
+          if (monthly != null) {
+            prefs.setInt(monthBudgetKey, monthlyBudget);
+          } else {
+            prefs.remove(monthBudgetKey);
+          }
+        });
+      } else {
+        debugPrint('Failed to fetch budgets: ${response.statusCode} - ${response.body}');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to fetch budgets: ${response.statusCode}')),
+          );
+        }
+        setState(() {
+          weeklyBudget = 0;
+          monthlyBudget = 0;
+          prefs.remove(weekBudgetKey);
+          prefs.remove(monthBudgetKey);
+        });
+      }
+    } catch (e) {
+      debugPrint('Error fetching budgets: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error fetching budgets: $e')),
+        );
+      }
+      setState(() {
+        weeklyBudget = 0;
+        monthlyBudget = 0;
+        prefs.remove(weekBudgetKey);
+        prefs.remove(monthBudgetKey);
+      });
+    }
+  }
+
+  Future<void> deleteBudget(String mode) async {
+    final token = await getTokenFromStorage();
+    if (token == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No token found, please login again')),
+        );
+      }
+      return;
+    }
+
+    final now = DateTime.now();
+    final weekStart = DateTime(now.year, now.month, now.day - (now.weekday - 1));
+    final weekEnd = weekStart.add(const Duration(days: 6));
+    final monthStart = DateTime(now.year, now.month, 1);
+    final monthEnd = DateTime(now.year, now.month + 1, 0);
+    final prefs = await SharedPreferences.getInstance();
+    final weekBudgetKey = 'budget_weekly_${now.year}_${_getWeekNumber(now)}';
+    final monthBudgetKey = 'budget_monthly_${now.year}_${now.month}';
+
+    try {
+      final response = await http.get(
+        Uri.parse('$apiBaseUrl/plan'),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+      if (response.statusCode == 200) {
+        final List<dynamic> plans = jsonDecode(response.body);
+        dynamic plan;
+        if (mode == 'weekly') {
+          plan = plans.firstWhere(
+            (p) =>
+                p['periode_type'] == 'weekly' &&
+                _sameDate(DateTime.parse(p['periode_start']), weekStart) &&
+                _sameDate(DateTime.parse(p['periode_end']), weekEnd),
+            orElse: () => null,
+          );
+        } else {
+          plan = plans.firstWhere(
+            (p) =>
+                p['periode_type'] == 'monthly' &&
+                _sameDate(DateTime.parse(p['periode_start']), monthStart) &&
+                _sameDate(DateTime.parse(p['periode_end']), monthEnd),
+            orElse: () => null,
+          );
+        }
+
+        if (plan == null) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('No budget found to delete')),
+            );
+          }
+          return;
+        }
+
+        final planId = plan['id'];
+        final deleteResponse = await http.delete(
+          Uri.parse('$apiBaseUrl/plan/$planId'),
+          headers: {
+            'Authorization': 'Bearer $token',
+            'Content-Type': 'application/json',
+          },
+        );
+
+        if (deleteResponse.statusCode == 200 || deleteResponse.statusCode == 204) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Budget deleted successfully!')),
+            );
+          }
+          setState(() {
+            if (mode == 'weekly') {
+              weeklyBudget = 0;
+              prefs.remove(weekBudgetKey);
+            } else {
+              monthlyBudget = 0;
+              prefs.remove(monthBudgetKey);
+            }
+            amount = '';
+            currentMode = '';
+          });
+          await fetchBudgets();
+        } else {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Failed to delete budget: ${deleteResponse.statusCode}')),
+            );
+          }
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to fetch budgets: ${response.statusCode}')),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('Error deleting budget: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error deleting budget: $e')),
+        );
+      }
+    }
+  }
+
+  bool _sameDate(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
+
+  int _getWeekNumber(DateTime date) {
+    final firstJan = DateTime(date.year, 1, 1);
+    final days = date.difference(firstJan).inDays;
+    return ((days + firstJan.weekday) / 7).ceil();
+  }
+
+  Future<int?> _fetchUserId(String token) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$apiBaseUrl/user'),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+      debugPrint('Fetch user ID response: ${response.statusCode} - ${response.body}');
+      if (response.statusCode == 200) {
+        final userData = jsonDecode(response.body);
+        final userId = int.tryParse(userData['id'].toString());
+        if (userId != null) {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setInt('userId', userId);
+          return userId;
+        }
+      }
+      return null;
+    } catch (e) {
+      debugPrint('Error fetching user ID: $e');
+      return null;
+    }
+  }
+
+  Future<void> _saveBudget({required int nominal, required String mode}) async {
+    final token = await getTokenFromStorage();
+    if (token == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No token found, please login again')),
+        );
+      }
+      return;
+    }
+
+    int? userId = await getUserIdFromStorage();
+    if (userId == null) {
+      userId = await _fetchUserId(token);
+      if (userId == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Unable to fetch user ID')),
+          );
+        }
+        return;
+      }
+    }
+
+    DateTime now = DateTime.now();
+    DateFormat formatter = DateFormat('yyyy-MM-dd');
+    late DateTime periodStart, periodEnd;
+    if (mode == 'weekly') {
+      int daysToMonday = now.weekday - 1;
+      periodStart = now.subtract(Duration(days: daysToMonday));
+      periodEnd = periodStart.add(const Duration(days: 6));
+    } else {
+      periodStart = DateTime(now.year, now.month, 1);
+      periodEnd = DateTime(now.year, now.month + 1, 0);
+    }
+
+    try {
+      final response = await http.post(
+        Uri.parse('$apiBaseUrl/plan'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'pengguna_id': userId,
+          'periode_type': mode,
+          'periode_start': formatter.format(periodStart),
+          'periode_end': formatter.format(periodEnd),
+          'nominal': nominal.toString(),
+          'created_at': formatter.format(now),
+          'updated_at': formatter.format(now),
+        }),
+      );
+
+      debugPrint('Save budget response: ${response.statusCode} - ${response.body}');
+
+      if (response.statusCode == 201) {
+        final prefs = await SharedPreferences.getInstance();
+        if (mode == 'weekly') {
+          await prefs.setInt('budget_weekly_${now.year}_${_getWeekNumber(now)}', nominal);
+        } else {
+          await prefs.setInt('budget_monthly_${now.year}_${now.month}', nominal);
+        }
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Budget saved successfully!')),
+          );
+        }
+        await fetchBudgets();
+        setState(() {
+          amount = '';
+          currentMode = '';
+        });
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to save budget: ${response.statusCode} - ${response.body}')),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('Error saving budget: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error saving budget: $e')),
+        );
+      }
+    }
+  }
 
   void _onNumberPressed(String value) {
     setState(() {
-      amount += value;
+      String rawAmount = amount.replaceAll('.', '');
+      if ((value == '.' || value == ',') && (rawAmount.contains('.') || rawAmount.contains(','))) return;
+      if (rawAmount == '0' && value != '.') {
+        rawAmount = value;
+      } else {
+        rawAmount += value;
+      }
+      int? parsed = int.tryParse(rawAmount.replaceAll(',', ''));
+      if (parsed != null) {
+        amount = _numberFormat.format(parsed);
+      } else {
+        amount = rawAmount;
+      }
     });
   }
 
   void _onDeletePressed() {
     setState(() {
       if (amount.isNotEmpty) {
-        amount = amount.substring(0, amount.length - 1);
+        String rawAmount = amount.replaceAll('.', '');
+        rawAmount = rawAmount.substring(0, rawAmount.length - 1);
+        int? parsed = int.tryParse(rawAmount);
+        amount = parsed != null ? _numberFormat.format(parsed) : '';
       }
     });
   }
 
   void _onConfirmPressed() {
-    setState(() {
-      int parsedAmount = int.tryParse(amount.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
-      if (currentMode == 'weekly') {
-        weeklyBudget = parsedAmount;
-      } else if (currentMode == 'monthly') {
-        monthlyBudget = parsedAmount;
+    if (currentMode.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please select a budget mode (weekly/monthly)')),
+        );
       }
-      amount = '';
-      currentMode = '';
-    });
-  }
-
-  void _onTodayPressed() async {
-    DateTime? selectedDate = await showDatePicker(
-      context: context,
-      initialDate: DateTime.now(),
-      firstDate: DateTime(2000),
-      lastDate: DateTime(2100),
-    );
-    if (selectedDate != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Selected date: ${selectedDate.toLocal()}'.split(' ')[0])),
-      );
+      return;
     }
-  }
-
-  String evaluateExpression(String input) {
-    try {
-      String sanitized = input.replaceAll('×', '*').replaceAll('÷', '/').replaceAll('−', '-');
-      Parser p = Parser();
-      Expression exp = p.parse(sanitized);
-      ContextModel cm = ContextModel();
-      double eval = exp.evaluate(EvaluationType.REAL, cm);
-      return eval.toStringAsFixed(eval.truncateToDouble() == eval ? 0 : 2);
-    } catch (e) {
-      return 'Error';
+    if (amount.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please enter a valid positive amount')),
+        );
+      }
+      return;
     }
+
+    int? parsedAmount = int.tryParse(amount.replaceAll('.', ''));
+    if (parsedAmount == null || parsedAmount <= 0) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please enter a valid positive amount')),
+        );
+      }
+      setState(() {
+        amount = '';
+        currentMode = '';
+      });
+      return;
+    }
+
+    _saveBudget(nominal: parsedAmount, mode: currentMode);
   }
 
   void _onItemTapped(int index) {
     setState(() {
       _selectedIndex = index;
     });
-
+    if (!mounted) return;
     switch (index) {
       case 0:
-        Navigator.pushReplacementNamed(context, '/home_month');
+        Navigator.pushNamed(context, '/home').then((_) => fetchBudgets());
         break;
       case 1:
-        Navigator.pushReplacementNamed(context, '/home_year');
-        break;
-      case 2:
-        break; // stay on BudgetPage
-      case 3:
-        Navigator.pushReplacementNamed(context, '/chart_page');
-        break;
-      case 4:
-        Navigator.pushReplacementNamed(context, '/add_page');
+        Navigator.pushNamed(context, '/chart_page').then((_) => fetchBudgets());
         break;
     }
   }
 
   Widget _buildBudgetTile({required String label, required int amountValue, required String mode}) {
+    final isActive = currentMode == mode;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8),
       child: Container(
@@ -101,22 +437,27 @@ class _BudgetPageState extends State<BudgetPage> {
         decoration: BoxDecoration(
           color: Colors.grey[100],
           borderRadius: BorderRadius.circular(12),
-          boxShadow: [
+          boxShadow: const [
             BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, 2)),
           ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(label, style: const TextStyle(fontWeight: FontWeight.bold, fontFamily: 'Poppins')),
+            Text(
+              label,
+              style: const TextStyle(fontWeight: FontWeight.bold, fontFamily: 'Poppins'),
+            ),
             const SizedBox(height: 8),
-            Text('IDR $amountValue',
-                style: const TextStyle(
-                  fontSize: 20,
-                  color: Color(0xFF724E99),
-                  fontWeight: FontWeight.bold,
-                  fontFamily: 'Poppins',
-                )),
+            Text(
+              'IDR ${_numberFormat.format(amountValue)}',
+              style: const TextStyle(
+                fontSize: 20,
+                color: Color(0xFF724E99),
+                fontWeight: FontWeight.bold,
+                fontFamily: 'Poppins',
+              ),
+            ),
             const SizedBox(height: 8),
             TextField(
               readOnly: true,
@@ -134,27 +475,37 @@ class _BudgetPageState extends State<BudgetPage> {
                 contentPadding: const EdgeInsets.symmetric(horizontal: 12),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
               ),
-              controller: TextEditingController(text: amount),
+              controller: TextEditingController(text: isActive ? amount : ''),
               style: const TextStyle(fontFamily: 'Poppins'),
             ),
             const SizedBox(height: 8),
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: () {
-                  setState(() {
-                    currentMode = mode;
-                    _onConfirmPressed();
-                  });
-                },
+                onPressed: (isActive && amount.isNotEmpty) ? _onConfirmPressed : null,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF724E99),
                   foregroundColor: Colors.white,
+                  disabledBackgroundColor: Colors.grey[400],
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 ),
                 child: const Text('SAVE BUDGET', style: TextStyle(fontFamily: 'Poppins')),
               ),
             ),
-            if (currentMode == mode)
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () => deleteBudget(mode),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color.fromARGB(255, 71, 43, 98),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                child: const Text('DELETE BUDGET', style: TextStyle(fontFamily: 'Poppins')),
+              ),
+            ),
+            if (isActive)
               Padding(
                 padding: const EdgeInsets.only(top: 8.0),
                 child: Align(
@@ -176,68 +527,82 @@ class _BudgetPageState extends State<BudgetPage> {
     );
   }
 
-  Widget _buildKeypadButton(String label, {VoidCallback? onTap, Color? color, Color? textColor, Widget? icon}) {
+  Widget _buildKeypadButton(String label, {VoidCallback? onTap, Widget? icon}) {
     return Padding(
       padding: const EdgeInsets.all(6.0),
       child: ElevatedButton(
         onPressed: onTap,
         style: ElevatedButton.styleFrom(
-          backgroundColor: color ?? const Color(0xFFFEF6FF),
-          foregroundColor: textColor ?? Colors.black,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
+          backgroundColor: Colors.white,
+          foregroundColor: Colors.black,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           padding: const EdgeInsets.all(20),
           elevation: 0,
         ),
-        child: icon ??
-            Text(
-              label,
-              style: const TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                fontFamily: 'Poppins',
+        child: icon != null
+            ? icon
+            : Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  fontFamily: 'Poppins',
+                ),
               ),
-            ),
       ),
     );
   }
 
   Widget _buildKeypad() {
-    return Align(
-      alignment: Alignment.bottomCenter,
-      child: Container(
-        color: const Color(0xFF724E99),
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              children: [
-                Expanded(child: _buildKeypadButton('Today', onTap: _onTodayPressed)),
-                Expanded(child: _buildKeypadButton('+', onTap: () => _onNumberPressed('+'))),
-                Expanded(child: _buildKeypadButton('', onTap: _onConfirmPressed, icon: const Icon(Icons.check, color: Colors.black))),
-              ],
-            ),
-            Row(
-              children: ['×', '7', '8', '9'].map((label) => Expanded(child: _buildKeypadButton(label, onTap: () => _onNumberPressed(label)))).toList(),
-            ),
-            Row(
-              children: ['−', '4', '5', '6'].map((label) => Expanded(child: _buildKeypadButton(label, onTap: () => _onNumberPressed(label)))).toList(),
-            ),
-            Row(
-              children: ['÷', '1', '2', '3'].map((label) => Expanded(child: _buildKeypadButton(label, onTap: () => _onNumberPressed(label)))).toList(),
-            ),
-            Row(
-              children: [
-                Expanded(child: _buildKeypadButton('', onTap: _onDeletePressed, icon: const Icon(Icons.backspace_outlined, color: Colors.black))),
-                Expanded(child: _buildKeypadButton('.', onTap: () => _onNumberPressed('.'))),
-                Expanded(child: _buildKeypadButton('0', onTap: () => _onNumberPressed('0'))),
-                Expanded(child: _buildKeypadButton('=', onTap: () => setState(() => amount = evaluateExpression(amount)))),
-              ],
-            ),
-          ],
-        ),
+    final List<List<String>> keys = [
+      ['1', '2', '3', 'del'],
+      ['4', '5', '6', 'check'],
+      ['7', '8', '9', ''],
+      ['.', '0', ',', ''],
+    ];
+
+    return Container(
+      color: const Color(0xFF724E99),
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: keys.map((row) {
+          return Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: row.map((label) {
+              if (label == 'del') {
+                return Expanded(
+                  child: _buildKeypadButton(
+                    '',
+                    onTap: _onDeletePressed,
+                    icon: const Icon(Icons.backspace_outlined, color: Colors.black),
+                  ),
+                );
+              } else if (label == 'check') {
+                return Expanded(
+                  child: _buildKeypadButton(
+                    '',
+                    onTap: (amount.isNotEmpty) ? _onConfirmPressed : null,
+                    icon: Icon(
+                      Icons.check_circle,
+                      color: (amount.isNotEmpty) ? const Color(0xFF724E99) : Colors.grey[400],
+                      size: 32,
+                    ),
+                  ),
+                );
+              } else if (label == '') {
+                return const Expanded(child: SizedBox());
+              } else {
+                return Expanded(
+                  child: _buildKeypadButton(
+                    label,
+                    onTap: () => _onNumberPressed(label),
+                  ),
+                );
+              }
+            }).toList(),
+          );
+        }).toList(),
       ),
     );
   }
@@ -246,49 +611,66 @@ class _BudgetPageState extends State<BudgetPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFFEF6FF),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF724E99),
-        title: const Text('Budgeting', style: TextStyle(color: Colors.white, fontFamily: 'Poppins')),
-        iconTheme: const IconThemeData(color: Colors.white),
-      ),
-      body: Stack(
+      body: Column(
         children: [
-          SingleChildScrollView(
-            padding: const EdgeInsets.only(bottom: 320),
-            child: Column(
-              children: [
-                const SizedBox(height: 16),
-                _buildBudgetTile(label: 'Weekly Budget Limit', amountValue: weeklyBudget, mode: 'weekly'),
-                _buildBudgetTile(label: 'Monthly Budget Limit', amountValue: monthlyBudget, mode: 'monthly'),
+          Container(
+            width: double.infinity,
+            color: const Color(0xFF724E99),
+            padding: const EdgeInsets.only(top: 63, bottom: 32, left: 16, right: 16),
+            child: const Text(
+              'Budgeting',
+              style: TextStyle(
+                fontFamily: 'Poppins',
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ),
+          Expanded(
+            child: CustomScrollView(
+              slivers: [
+                SliverToBoxAdapter(
+                  child: Column(
+                    children: [
+                      const SizedBox(height: 16),
+                      _buildBudgetTile(label: 'Weekly Budget Limit', amountValue: weeklyBudget, mode: 'weekly'),
+                      _buildBudgetTile(label: 'Monthly Budget Limit', amountValue: monthlyBudget, mode: 'monthly'),
+                      const SizedBox(height: 16),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
           if (currentMode.isNotEmpty) _buildKeypad(),
         ],
       ),
-     bottomNavigationBar: BottomNavigationBar(
-  currentIndex: _selectedIndex, // pakai _selectedIndex sesuai deklarasi
-  onTap: _onItemTapped,         // pakai _onItemTapped yang kamu buat
-  backgroundColor: const Color(0xFF724E99),
-  selectedItemColor: const Color(0xFFD4B1F8),
-  unselectedItemColor: Colors.white,
-  selectedLabelStyle: const TextStyle(fontFamily: 'Poppins'),
-  unselectedLabelStyle: const TextStyle(fontFamily: 'Poppins'),
-  items: const [
-    BottomNavigationBarItem(
-      icon: Icon(Icons.home),
-      label: 'Home',
-    ),
-    BottomNavigationBarItem(
-      icon: Icon(Icons.pie_chart),
-      label: 'Chart',
-    ),
-    BottomNavigationBarItem(
-      icon: Icon(Icons.account_balance_wallet),
-      label: 'Budgeting',
-    ),
-  ],
-),
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _selectedIndex,
+        onTap: _onItemTapped,
+        backgroundColor: const Color(0xFF724E99),
+        selectedItemColor: Colors.white,
+        unselectedItemColor: Colors.white70,
+        iconSize: 28,
+        selectedLabelStyle: const TextStyle(fontFamily: 'Poppins'),
+        unselectedLabelStyle: const TextStyle(fontFamily: 'Poppins'),
+        items: const [
+          BottomNavigationBarItem(
+            icon: Icon(Icons.home),
+            label: 'Home',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.pie_chart),
+            label: 'Chart',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.account_balance_wallet),
+            label: 'Budgeting',
+          ),
+        ],
+      ),
     );
   }
 }

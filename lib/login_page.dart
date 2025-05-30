@@ -1,10 +1,14 @@
-import 'dart:math';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
+const apiBaseUrl = 'http://10.0.2.2:8000/api';
+
 class LoginPage extends StatefulWidget {
+  const LoginPage({super.key});
+
   @override
   State<LoginPage> createState() => _LoginPageState();
 }
@@ -13,10 +17,46 @@ class _LoginPageState extends State<LoginPage> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _rememberMe = false;
+  bool _isLoading = false;
+  bool _obscurePassword = true;
 
-  void _login() async {
-    String email = _emailController.text;
-    String password = _passwordController.text;
+  @override
+  void initState() {
+    super.initState();
+    _loadRemembered();
+  }
+
+  Future<void> _loadRemembered() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _rememberMe = prefs.getBool('remember_me') ?? false;
+      if (_rememberMe) {
+        _emailController.text = prefs.getString('email') ?? '';
+        _passwordController.text = prefs.getString('password') ?? '';
+      }
+    });
+  }
+
+  Future<void> _saveRemembered() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (_rememberMe) {
+      await prefs.setBool('remember_me', true);
+      await prefs.setString('email', _emailController.text);
+      await prefs.setString('password', _passwordController.text);
+    } else {
+      await prefs.setBool('remember_me', false);
+      await prefs.remove('email');
+      await prefs.remove('password');
+    }
+  }
+
+  Future<void> _login() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    final email = _emailController.text;
+    final password = _passwordController.text;
 
     final emailRegex = RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$');
     if (!emailRegex.hasMatch(email)) {
@@ -26,22 +66,56 @@ class _LoginPageState extends State<LoginPage> {
     } else if (email.isEmpty || password.isEmpty) {
       _showDialog('Email and password are required');
     } else {
-      // Daftar avatar asset offline
-      List<String> avatars = [
-        'assets/avatars/avatar1.png',
-        'assets/avatars/avatar2.png',
-        'assets/avatars/avatar3.png',
-        'assets/avatars/avatar4.png',
-      ];
+      try {
+        final response = await http.post(
+          Uri.parse('$apiBaseUrl/mobile/login'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'email': email,
+            'password': password,
+          }),
+        );
+        debugPrint('Login response: ${response.statusCode} - ${response.body}');
 
-      // Pilih avatar secara acak
-      String avatarPath = avatars[Random().nextInt(avatars.length)];
+        final responseData = jsonDecode(response.body);
+        if (response.statusCode == 200) {
+          final data = responseData['data'] ?? responseData;
+          final token = data['access_token']?.toString() ?? data['token']?.toString();
+          final userId = int.tryParse(data['pengguna']?['id']?.toString() ?? '');
 
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('avatarUrl', avatarPath);
-      await prefs.setString('userEmail', email);
+          if (token == null) {
+            throw Exception('Token tidak ditemukan dalam response');
+          }
+          if (userId == null) {
+            throw Exception('User ID tidak ditemukan dalam response');
+          }
 
-      Navigator.pushReplacementNamed(context, '/home');
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('token', token);
+          await prefs.setInt('userId', userId);
+          debugPrint('Saved token: $token, userId: $userId');
+          await _saveRemembered();
+          await Future.delayed(const Duration(milliseconds: 200));
+
+          if (mounted) {
+            Navigator.pushReplacementNamed(context, '/home');
+          }
+        } else {
+          final message = responseData['message'] ?? 'Login failed. Please try again.';
+          if (mounted) {
+            _showDialog(message);
+          }
+        }
+      } catch (e) {
+        if (mounted) {
+          _showDialog('Error: $e');
+        }
+        debugPrint('Login error: $e');
+      } finally {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -66,14 +140,14 @@ class _LoginPageState extends State<LoginPage> {
                       fontFamily: 'Poppins',
                       fontWeight: FontWeight.w700,
                       fontSize: 20,
-                      color: isSuccess ? Color(0xFF724E99) : Colors.red,
+                      color: isSuccess ? const Color(0xFF724E99) : Colors.red,
                     ),
                   ),
                   const SizedBox(height: 10),
                   Text(
                     message,
                     textAlign: TextAlign.center,
-                    style: TextStyle(
+                    style: const TextStyle(
                       fontFamily: 'Poppins',
                       fontWeight: FontWeight.w400,
                       fontSize: 14,
@@ -84,12 +158,12 @@ class _LoginPageState extends State<LoginPage> {
                   ElevatedButton(
                     onPressed: () => Navigator.pop(ctx),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: isSuccess ? Color(0xFF724E99) : Colors.red,
+                      backgroundColor: isSuccess ? const Color(0xFF724E99) : Colors.red,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(10),
                       ),
                     ),
-                    child: Text(
+                    child: const Text(
                       'OK',
                       style: TextStyle(
                         fontFamily: 'Poppins',
@@ -106,7 +180,7 @@ class _LoginPageState extends State<LoginPage> {
               top: -40,
               child: CircleAvatar(
                 radius: 40,
-                backgroundColor: isSuccess ? Color(0xFF724E99) : Colors.red,
+                backgroundColor: isSuccess ? const Color(0xFF724E99) : Colors.red,
                 child: Icon(
                   isSuccess ? Icons.check : Icons.close,
                   color: Colors.white,
@@ -123,15 +197,15 @@ class _LoginPageState extends State<LoginPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Color(0xFFFEF6FF),
+      backgroundColor: const Color(0xFFFEF6FF),
       body: Center(
         child: SingleChildScrollView(
-          padding: EdgeInsets.symmetric(horizontal: 24),
+          padding: const EdgeInsets.symmetric(horizontal: 24),
           child: Column(
             children: [
               SvgPicture.asset('assets/piggy_bank.svg', height: 132),
               const SizedBox(height: 20),
-              Text(
+              const Text(
                 "CELENGIN",
                 style: TextStyle(
                   fontFamily: 'Poppins',
@@ -148,7 +222,7 @@ class _LoginPageState extends State<LoginPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
+                      const Text(
                         "Login",
                         style: TextStyle(
                           fontFamily: 'Poppins',
@@ -156,15 +230,15 @@ class _LoginPageState extends State<LoginPage> {
                           fontSize: 23,
                         ),
                       ),
-                      Divider(
-                        color: Colors.black,
-                        thickness: 1,
-                      ),
+                      const Divider(color: Colors.black, thickness: 1),
                       const SizedBox(height: 12),
                       TextField(
                         controller: _emailController,
-                        decoration: InputDecoration(labelText: 'Email'),
-                        style: TextStyle(
+                        decoration: const InputDecoration(labelText: 'Email'),
+                        onChanged: (val) {
+                          if (_rememberMe) _saveRemembered();
+                        },
+                        style: const TextStyle(
                           fontFamily: 'Poppins',
                           fontWeight: FontWeight.w300,
                           fontSize: 13,
@@ -172,9 +246,25 @@ class _LoginPageState extends State<LoginPage> {
                       ),
                       TextField(
                         controller: _passwordController,
-                        decoration: InputDecoration(labelText: 'Password'),
-                        obscureText: true,
-                        style: TextStyle(
+                        decoration: InputDecoration(
+                          labelText: 'Password',
+                          suffixIcon: IconButton(
+                            icon: Icon(
+                              _obscurePassword ? Icons.visibility : Icons.visibility_off,
+                              color: Colors.grey,
+                            ),
+                            onPressed: () {
+                              setState(() {
+                                _obscurePassword = !_obscurePassword;
+                              });
+                            },
+                          ),
+                        ),
+                        obscureText: _obscurePassword,
+                        onChanged: (val) {
+                          if (_rememberMe) _saveRemembered();
+                        },
+                        style: const TextStyle(
                           fontFamily: 'Poppins',
                           fontWeight: FontWeight.w300,
                           fontSize: 13,
@@ -186,7 +276,7 @@ class _LoginPageState extends State<LoginPage> {
                         visualDensity: VisualDensity.compact,
                         value: _rememberMe,
                         onChanged: (val) => setState(() => _rememberMe = val!),
-                        title: Text(
+                        title: const Text(
                           "Remember me",
                           style: TextStyle(
                             fontFamily: 'Poppins',
@@ -197,28 +287,37 @@ class _LoginPageState extends State<LoginPage> {
                         controlAffinity: ListTileControlAffinity.leading,
                       ),
                       ElevatedButton(
-                        onPressed: _login,
-                        child: Text(
-                          "SIGN IN",
-                          style: TextStyle(
-                            fontFamily: 'Poppins',
-                            fontWeight: FontWeight.w600,
-                            fontSize: 15,
-                            color: Colors.white,
-                          ),
-                        ),
+                        onPressed: _isLoading ? null : _login,
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Color(0xFF724E99),
-                          minimumSize: Size.fromHeight(40),
+                          backgroundColor: const Color(0xFF724E99),
+                          minimumSize: const Size.fromHeight(40),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                         ),
+                        child: _isLoading
+                            ? const SizedBox(
+                                height: 20,
+                                width: 20,
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Text(
+                                "SIGN IN",
+                                style: TextStyle(
+                                  fontFamily: 'Poppins',
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 15,
+                                  color: Colors.white,
+                                ),
+                              ),
                       ),
                       const SizedBox(height: 8),
                       Center(
                         child: TextButton(
                           onPressed: () => Navigator.pushNamed(context, '/register'),
                           child: RichText(
-                            text: TextSpan(
+                            text: const TextSpan(
                               text: "Don't have an account? ",
                               style: TextStyle(
                                 fontFamily: 'Poppins',
@@ -240,11 +339,11 @@ class _LoginPageState extends State<LoginPage> {
                             ),
                           ),
                         ),
-                      )
+                      ),
                     ],
                   ),
                 ),
-              )
+              ),
             ],
           ),
         ),

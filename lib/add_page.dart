@@ -1,38 +1,153 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:intl/intl.dart';
+
+const apiBaseUrl = 'http://10.0.2.2:8000/api';
 
 class AddPage extends StatefulWidget {
-  const AddPage({Key? key}) : super(key: key);
+  const AddPage({super.key});
 
   @override
   State<AddPage> createState() => _AddPageState();
 }
 
 class _AddPageState extends State<AddPage> {
-  String? selectedType = 'Expenses'; // Default to Expenses
+  String? selectedType = 'Expenses';
   String? selectedCategory;
-  String amount = '';
+  int? selectedCategoryId;
+  String amount = '0';
   String note = '';
+  DateTime? selectedDate;
 
   final List<String> types = ['Expenses', 'Income'];
-
-  final Map<String, List<Map<String, dynamic>>> categories = {
-    'Expenses': [
-      {'label': 'Food', 'icon': 'assets/icons/drink.svg'},
-      {'label': 'Shopping', 'icon': 'assets/icons/shopping.svg'},
-      {'label': 'Laundry', 'icon': 'assets/icons/laundry.svg'},
-      {'label': 'Health', 'icon': 'assets/icons/health.svg'},
-      {'label': 'Hangout', 'icon': 'assets/icons/hangout.svg'},
-    ],
-    'Income': [
-      {'label': 'Parents', 'icon': 'assets/icons/parents.svg'},
-      {'label': 'Scholar', 'icon': 'assets/icons/scholar.svg'},
-    ],
+  Map<String, List<Map<String, dynamic>>> categories = {
+    'Expenses': [],
+    'Income': [],
   };
+  bool isLoadingCategories = true;
+  bool isSubmitting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    fetchCategories();
+  }
+
+  Future<String?> _getToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('token')?.trim();
+    debugPrint('Retrieved token in AddPage: $token');
+    if (token == null || token.isEmpty) {
+      debugPrint('Token is null or empty');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Sesi kadaluarsa, silakan login kembali')),
+        );
+        Navigator.pushReplacementNamed(context, '/login');
+      }
+      return null;
+    }
+    debugPrint('Token length: ${token.length}');
+    debugPrint('Token contains space: ${token.contains(' ')}');
+    return token;
+  }
+
+  Future<void> fetchCategories() async {
+    setState(() {
+      isLoadingCategories = true;
+    });
+    try {
+      final token = await _getToken();
+      if (token == null) return;
+
+      final headers = {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+        'Accept': 'application/json',
+      };
+      debugPrint('Headers for fetchCategories: $headers');
+
+      final incomeRes = await http.get(
+        Uri.parse('$apiBaseUrl/income'),
+        headers: headers,
+      );
+      debugPrint('Income response: ${incomeRes.statusCode} - ${incomeRes.body}');
+
+      final outcomeRes = await http.get(
+        Uri.parse('$apiBaseUrl/outcome'),
+        headers: headers,
+      );
+      debugPrint('Outcome response: ${outcomeRes.statusCode} - ${outcomeRes.body}');
+
+      if (incomeRes.statusCode == 200 && outcomeRes.statusCode == 200) {
+        final incomeData = jsonDecode(incomeRes.body);
+        final outcomeData = jsonDecode(outcomeRes.body);
+
+        final incomeList = incomeData is List ? incomeData : incomeData['data'] ?? [];
+        final outcomeList = outcomeData is List ? outcomeData : outcomeData['data'] ?? [];
+
+        setState(() {
+          categories['Income'] = incomeList.map<Map<String, dynamic>>((e) {
+            return {
+              'id': e['id'],
+              'label': e['nama']?.toString() ?? e['name']?.toString() ?? 'Unknown',
+              'icon': e['icon']?.toString() ?? '',
+            };
+          }).toList();
+          categories['Expenses'] = outcomeList.map<Map<String, dynamic>>((e) {
+            return {
+              'id': e['id'],
+              'label': e['nama']?.toString() ?? e['name']?.toString() ?? 'Unknown',
+              'icon': e['icon']?.toString() ?? '',
+            };
+          }).toList();
+          isLoadingCategories = false;
+        });
+      } else if (incomeRes.statusCode == 401 || outcomeRes.statusCode == 401) {
+        if (mounted) {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.remove('token');
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Sesi kadaluarsa, silakan login kembali')),
+          );
+          Navigator.pushReplacementNamed(context, '/login');
+        }
+      } else {
+        throw Exception('Gagal memuat kategori: Income(${incomeRes.statusCode}), Outcome(${outcomeRes.statusCode})');
+      }
+    } catch (e) {
+      setState(() {
+        isLoadingCategories = false;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Gagal memuat kategori: $e')),
+        );
+      }
+      debugPrint('Error fetching categories: $e');
+    }
+  }
 
   void _onNumberPressed(String value) {
     setState(() {
+      if (value == '.' && amount.contains('.')) return;
+      if (amount == '0' && value != '.') amount = ''; // Hapus leading zero
       amount += value;
+      final cleanedAmount = amount.replaceAll(RegExp(r'[×\+\−\÷]'), '');
+      if (cleanedAmount.isNotEmpty && double.tryParse(cleanedAmount) == null) {
+        amount = amount.substring(0, amount.length - 1); // Batalkan input tidak valid
+      }
+    });
+  }
+
+  void _onOperatorPressed(String op) {
+    setState(() {
+      if (amount.isNotEmpty && !RegExp(r'[×\+\−\÷]$').hasMatch(amount)) {
+        amount += op;
+      }
     });
   }
 
@@ -40,49 +155,162 @@ class _AddPageState extends State<AddPage> {
     setState(() {
       if (amount.isNotEmpty) {
         amount = amount.substring(0, amount.length - 1);
+        if (amount.isEmpty) amount = '0';
       }
     });
   }
 
-  void _onConfirmPressed() {
-    print("Saved: Type=$selectedType, Category=$selectedCategory, Amount=$amount, Note=$note");
+  Future<void> _onConfirmPressed() async {
+    final cleanedAmount = amount.replaceAll(RegExp(r'[×\+\−\÷]'), '');
+    if (cleanedAmount.isEmpty || double.tryParse(cleanedAmount) == null || double.parse(cleanedAmount) <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Masukkan jumlah nominal yang valid!')),
+      );
+      return;
+    }
+    if (selectedCategory == null || selectedCategoryId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Pilih kategori!')),
+      );
+      return;
+    }
+    if (categories[selectedType]!.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Tidak ada kategori tersedia untuk jenis ini!')),
+      );
+      return;
+    }
+
+    setState(() {
+      isSubmitting = true;
+    });
+
+    final jenis = selectedType == 'Income' ? 'income' : 'outcome';
+    final data = {
+      'jenis': jenis,
+      selectedType == 'Income' ? 'income_id' : 'outcome_id': selectedCategoryId,
+      'nominal': double.parse(cleanedAmount) * (selectedType == 'Expenses' ? -1 : 1),
+      'keterangan': note,
+      'tanggal': DateFormat('yyyy-MM-dd HH:mm:ss').format(selectedDate ?? DateTime.now()),
+    };
+
+    debugPrint('Data sent to server: ${jsonEncode(data)}');
+
+    try {
+      final token = await _getToken();
+      if (token == null) return;
+
+      final headers = {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+        'Accept': 'application/json',
+      };
+      debugPrint('Headers for transaction: $headers');
+
+      final response = await http.post(
+        Uri.parse('$apiBaseUrl/transaksi'),
+        headers: headers,
+        body: jsonEncode(data),
+      );
+
+      debugPrint('Save transaction response: ${response.statusCode} - ${response.body}');
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Transaksi berhasil disimpan!')),
+          );
+          Navigator.pushReplacementNamed(context, '/home');
+        }
+      } else if (response.statusCode == 401 || response.statusCode == 403) {
+        if (mounted) {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.remove('token');
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Sesi kadaluarsa, silakan login kembali')),
+          );
+          Navigator.pushReplacementNamed(context, '/login');
+        }
+      } else {
+        String message = 'Gagal menyimpan transaksi: ${response.statusCode}';
+        try {
+          final errorData = jsonDecode(response.body);
+          message = errorData['message'] ?? message;
+        } catch (_) {}
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(message)),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('Error saving transaction: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Terjadi error: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          isSubmitting = false;
+        });
+      }
+    }
   }
 
-  Widget _buildKeypadButton(String label,
-      {VoidCallback? onTap, Color? color, Color? textColor, Widget? icon}) {
+  Widget _buildKeypadButton(String label, {VoidCallback? onTap, Widget? icon}) {
     return Padding(
       padding: const EdgeInsets.all(6.0),
       child: ElevatedButton(
         onPressed: onTap,
         style: ElevatedButton.styleFrom(
-          backgroundColor: color ?? const Color(0xFFFEF6FF),
-          foregroundColor: textColor ?? Colors.black,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
+          backgroundColor: const Color(0xFFFEF6FF),
+          foregroundColor: Colors.black,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           padding: const EdgeInsets.all(20),
           elevation: 0,
         ),
         child: icon ??
             Text(
               label,
-              style: const TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                fontFamily: 'Poppins',
-              ),
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, fontFamily: 'Poppins'),
             ),
       ),
     );
   }
 
   Widget _buildKeypad() {
-    final List<List<String>> keypadLayout = [
-      ['Today', '+', 'check'],
-      ['×', '7', '8', '9'],
-      ['−', '4', '5', '6'],
-      ['÷', '1', '2', '3'],
-      ['delete', '.', '0', '='],
+    final List<List<dynamic>> keypadLayout = [
+      [
+        {'label': 'Today', 'span': 2},
+        {'label': '+', 'icon': Icons.add},
+        {'label': 'check', 'icon': Icons.check_circle_rounded}
+      ],
+      [
+        {'label': '×', 'icon': Icons.close},
+        {'label': '7'},
+        {'label': '8'},
+        {'label': '9'}
+      ],
+      [
+        {'label': '−', 'icon': Icons.remove},
+        {'label': '4'},
+        {'label': '5'},
+        {'label': '6'}
+      ],
+      [
+        {'label': '÷'},
+        {'label': '1'},
+        {'label': '2'},
+        {'label': '3'}
+      ],
+      [
+        {'label': 'delete', 'icon': Icons.backspace},
+        {'label': '.'},
+        {'label': '0'},
+        {'label': '='}
+      ],
     ];
 
     return Container(
@@ -91,36 +319,54 @@ class _AddPageState extends State<AddPage> {
       child: Column(
         children: keypadLayout.map((row) {
           return Row(
-            children: row.map((label) {
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: row.map((item) {
+              final label = item['label'] as String;
+              final icon = item['icon'] as IconData?;
+              final span = item['span'] as int? ?? 1;
               return Expanded(
+                flex: span,
                 child: _buildKeypadButton(
                   label,
                   onTap: () async {
                     if (label == 'Today') {
                       final pickedDate = await showDatePicker(
                         context: context,
-                        initialDate: DateTime.now(),
+                        initialDate: selectedDate ?? DateTime.now(),
                         firstDate: DateTime(2000),
                         lastDate: DateTime(2100),
+                        builder: (context, child) {
+                          return Theme(
+                            data: ThemeData.light().copyWith(
+                              colorScheme: const ColorScheme.light(
+                                primary: Color(0xFF724E99),
+                                onPrimary: Colors.white,
+                                surface: Color(0xFFFEF6FF),
+                              ),
+                              dialogBackgroundColor: Colors.white,
+                            ),
+                            child: child!,
+                          );
+                        },
                       );
                       if (pickedDate != null) {
                         setState(() {
-                          note = '${pickedDate.day}/${pickedDate.month}/${pickedDate.year}';
+                          selectedDate = pickedDate;
                         });
                       }
                     } else if (label == 'check') {
-                      _onConfirmPressed();
+                      await _onConfirmPressed();
                     } else if (label == 'delete') {
                       _onDeletePressed();
-                    } else {
+                    } else if (label == '=') {
+                      // Tidak ada aksi untuk '=' saat ini
+                    } else if (RegExp(r'^\d+$|\.').hasMatch(label)) {
                       _onNumberPressed(label);
+                    } else {
+                      _onOperatorPressed(label);
                     }
                   },
-                  icon: label == 'check'
-                      ? const Icon(Icons.check, color: Colors.black)
-                      : label == 'delete'
-                          ? const Icon(Icons.backspace, color: Colors.black)
-                          : null,
+                  icon: icon != null ? Icon(icon, color: Colors.black) : null,
                 ),
               );
             }).toList(),
@@ -132,153 +378,203 @@ class _AddPageState extends State<AddPage> {
 
   @override
   Widget build(BuildContext context) {
+    final cleanedAmount = amount.replaceAll(RegExp(r'[×\+\−\÷]'), '');
+    final displayAmount = cleanedAmount.isEmpty || double.tryParse(cleanedAmount) == null
+        ? '0'
+        : NumberFormat('#,##0', 'id_ID').format(double.parse(cleanedAmount));
+
     return Scaffold(
       backgroundColor: const Color(0xFFFEF6FF),
-      body: SafeArea(
-        child: Column(
-          children: [
-            const SizedBox(height: 16),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: types.map((type) {
-                final isSelected = selectedType == type;
-                return GestureDetector(
-                  onTap: () {
-                    setState(() {
-                      selectedType = type;
-                      selectedCategory = null;
-                      amount = '';
-                      note = '';
-                    });
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                    margin: const EdgeInsets.symmetric(horizontal: 6),
-                    decoration: BoxDecoration(
-                      color: isSelected ? const Color(0xFF724E99) : Colors.grey.shade200,
-                      borderRadius: BorderRadius.circular(30),
-                    ),
-                    child: Text(
-                      type,
-                      style: TextStyle(
-                        fontFamily: 'Poppins',
-                        color: isSelected ? Colors.white : Colors.black,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                );
-              }).toList(),
-            ),
-            const SizedBox(height: 12),
-
-            if (selectedType != null)
-              Expanded(
-                child: SingleChildScrollView(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    child: GridView.count(
-                      crossAxisCount: 4,
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      children: categories[selectedType]!.map((category) {
-                        final isSelected = selectedCategory == category['label'];
-                        return GestureDetector(
-                          onTap: () {
-                            setState(() {
-                              selectedCategory = category['label'];
-                            });
-                          },
-                          child: Container(
-                            margin: const EdgeInsets.all(6),
-                            decoration: BoxDecoration(
-                              color: isSelected ? const Color(0xFF724E99) : Colors.grey.shade200,
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                SvgPicture.asset(
-                                  category['icon'],
-                                  width: 24,
-                                  height: 24,
-                                  colorFilter: ColorFilter.mode(
-                                    isSelected ? Colors.white : Colors.black,
-                                    BlendMode.srcIn,
-                                  ),
-                                ),
-                                const SizedBox(height: 6),
-                                Text(
-                                  category['label'],
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontFamily: 'Poppins',
-                                    color: isSelected ? Colors.white : Colors.black,
-                                  ),
-                                ),
-                              ],
+      body: isSubmitting || isLoadingCategories
+          ? const Center(child: CircularProgressIndicator())
+          : SafeArea(
+              child: Column(
+                children: [
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: types.map((type) {
+                      final isSelected = selectedType == type;
+                      return GestureDetector(
+                        onTap: () {
+                          setState(() {
+                            selectedType = type;
+                            selectedCategory = null;
+                            selectedCategoryId = null;
+                            amount = '0';
+                            note = '';
+                          });
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                          margin: const EdgeInsets.symmetric(horizontal: 6),
+                          decoration: BoxDecoration(
+                            color: isSelected ? const Color(0xFF724E99) : Colors.grey.shade200,
+                            borderRadius: BorderRadius.circular(30),
+                          ),
+                          child: Text(
+                            type == 'Expenses' ? 'Expenses' : 'Income',
+                            style: TextStyle(
+                              fontFamily: 'Poppins',
+                              color: isSelected ? Colors.white : Colors.black,
+                              fontWeight: FontWeight.bold,
                             ),
                           ),
-                        );
-                      }).toList(),
-                    ),
+                        ),
+                      );
+                    }).toList(),
                   ),
-                ),
-              ),
-
-            if (selectedType != null)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                child: TextField(
-                  decoration: InputDecoration(
-                    labelText: 'Note',
-                    labelStyle: const TextStyle(color: Colors.black, fontFamily: 'Poppins'),
-                    filled: true,
-                    fillColor: Colors.white,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: Color(0xFF724E99), width: 2),
+                  const SizedBox(height: 12),
+                  if (selectedType != null)
+                    Expanded(
+                      child: categories[selectedType]!.isEmpty
+                          ? const Center(
+                              child: Text('Tidak ada kategori tersedia',
+                                  style: TextStyle(fontFamily: 'Poppins')))
+                          : SingleChildScrollView(
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 12),
+                                child: GridView.count(
+                                  crossAxisCount: 4,
+                                  shrinkWrap: true,
+                                  physics: const NeverScrollableScrollPhysics(),
+                                  children: categories[selectedType]!.map((category) {
+                                    final isSelected = selectedCategory == category['label'];
+                                    return GestureDetector(
+                                      onTap: () {
+                                        setState(() {
+                                          selectedCategory = category['label'];
+                                          selectedCategoryId = category['id'];
+                                        });
+                                      },
+                                      child: Container(
+                                        margin: const EdgeInsets.all(6),
+                                        decoration: BoxDecoration(
+                                          color: isSelected ? const Color(0xFF724E99) : Colors.grey.shade200,
+                                          borderRadius: BorderRadius.circular(16),
+                                        ),
+                                        child: Column(
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: [
+                                            if (category['icon'].isNotEmpty)
+                                              FutureBuilder<String?>(
+                                                future: _getToken(),
+                                                builder: (context, snapshot) {
+                                                  if (!snapshot.hasData || snapshot.data == null) {
+                                                    return const Icon(Icons.category, size: 40);
+                                                  }
+                                                  return SvgPicture.network(
+                                                    category['icon'].startsWith('http')
+                                                        ? category['icon']
+                                                        : 'http://10.0.2.2:8000/storage/${category['icon']}',
+                                                    headers: {
+                                                      'Authorization': 'Bearer ${snapshot.data}',
+                                                      'Accept': 'application/json',
+                                                    },
+                                                    width: 40,
+                                                    height: 40,
+                                                    colorFilter: ColorFilter.mode(
+                                                      isSelected ? Colors.white : Colors.black,
+                                                      BlendMode.srcIn,
+                                                    ),
+                                                    placeholderBuilder: (context) => const Icon(Icons.category, size: 40),
+                                                    errorBuilder: (context, error, stackTrace) {
+                                                      debugPrint('SVG load error: $error');
+                                                      return const Icon(Icons.image_not_supported, size: 40);
+                                                    },
+                                                  );
+                                                },
+                                              )
+                                            else
+                                              Icon(
+                                                Icons.category,
+                                                size: 40,
+                                                color: isSelected ? Colors.white : Colors.black,
+                                              ),
+                                            const SizedBox(height: 6),
+                                            Text(
+                                              category['label'],
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                fontFamily: 'Poppins',
+                                                color: isSelected ? Colors.white : Colors.black,
+                                              ),
+                                              textAlign: TextAlign.center,
+                                              maxLines: 2,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    );
+                                  }).toList(),
+                                ),
+                              ),
+                            ),
                     ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: Color(0xFF724E99), width: 2),
+                  if (selectedType != null)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                      child: TextField(
+                        decoration: InputDecoration(
+                          labelText: 'Note',
+                          labelStyle: const TextStyle(color: Colors.black, fontFamily: 'Poppins'),
+                          filled: true,
+                          fillColor: Colors.white,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(color: Color(0xFF724E99), width: 2),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(color: Color(0xFF724E99), width: 2),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(color: Color(0xFF724E99), width: 2),
+                          ),
+                        ),
+                        style: const TextStyle(color: Colors.black, fontFamily: 'Poppins'),
+                        onChanged: (val) => setState(() => note = val),
+                        controller: TextEditingController(text: note)
+                          ..selection = TextSelection.fromPosition(TextPosition(offset: note.length)),
+                      ),
                     ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: Color(0xFF724E99), width: 2),
+                  if (selectedType != null)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                      child: Align(
+                        alignment: Alignment.centerRight,
+                        child: Text(
+                          '(IDR) $displayAmount',
+                          style: const TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF724E99),
+                            fontFamily: 'Poppins',
+                          ),
+                        ),
+                      ),
                     ),
-                  ),
-                  style: const TextStyle(color: Colors.black, fontFamily: 'Poppins'),
-                  onChanged: (val) => setState(() => note = val),
-                ),
-              ),
-
-            if (selectedType != null)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: Text(
-                    '(IDR) ${amount.isEmpty ? '0' : amount}',
-                    style: const TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF724E99),
-                      fontFamily: 'Poppins',
+                  if (selectedDate != null)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8, right: 16),
+                      child: Align(
+                        alignment: Alignment.centerRight,
+                        child: Text(
+                          'Date: ${DateFormat('dd/MM/yyyy').format(selectedDate!)}',
+                          style: const TextStyle(
+                            color: Color(0xFF724E99),
+                            fontFamily: 'Poppins',
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
                     ),
-                  ),
-                ),
+                  if (selectedType != null) _buildKeypad(),
+                ],
               ),
-            const SizedBox(height: 8),
-
-            if (selectedType != null)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: _buildKeypad(),
-              ),
-          ],
-        ),
-      ),
+            ),
     );
   }
 }
