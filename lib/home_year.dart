@@ -103,16 +103,27 @@ class HomeYearPageState extends State<HomeYearPage> {
 
   Future<void> _loadContinuedBalance() async {
     final prefs = await SharedPreferences.getInstance();
+    final previousYear = currentYear - 1;
+    final previousYearKey = 'has_transactions_$previousYear';
+    final hasPreviousTransactions = prefs.getBool(previousYearKey) ?? false;
     setState(() {
-      continuedBalance = prefs.getDouble('continued_balance_yearly') ?? 0.0;
+      continuedBalance = hasPreviousTransactions
+          ? (prefs.getDouble('continued_balance_yearly') ?? 0.0)
+          : 0.0;
     });
   }
 
   Future<void> _saveContinuedBalance() async {
     final prefs = await SharedPreferences.getInstance();
-    double previousBalance = prefs.getDouble('continued_balance_yearly') ?? 0.0;
-    double newBalance = previousBalance + total;
-    await prefs.setDouble('continued_balance_yearly', newBalance);
+    final currentYearKey = 'has_transactions_$currentYear';
+    if (allTransactions.isNotEmpty) {
+      double previousBalance = prefs.getDouble('continued_balance_yearly') ?? 0.0;
+      double newBalance = previousBalance + total;
+      await prefs.setDouble('continued_balance_yearly', newBalance);
+      await prefs.setBool(currentYearKey, true);
+    } else {
+      await prefs.setBool(currentYearKey, false);
+    }
   }
 
   Future<void> _loadAvatar() async {
@@ -157,7 +168,6 @@ class HomeYearPageState extends State<HomeYearPage> {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         final List<dynamic> list = data is List ? data : data['transaksi'] ?? [];
-        // Filter transactions for the current year
         List<Map<String, dynamic>> yearlyTransactions = list.map<Map<String, dynamic>>((item) {
           String? icon;
           String? categoryName;
@@ -186,7 +196,6 @@ class HomeYearPageState extends State<HomeYearPage> {
           allTransactions = yearlyTransactions;
         });
 
-        // Save the continued balance before resetting for the new period
         await _saveContinuedBalance();
       } else {
         if (mounted) {
@@ -255,8 +264,15 @@ class HomeYearPageState extends State<HomeYearPage> {
   void _navigateYear(int direction) {
     setState(() {
       currentYear += direction;
+      if (currentYear > DateTime.now().year) {
+        allTransactions = [];
+        continuedBalance = 0.0;
+      }
     });
-    fetchTransactions();
+    if (currentYear <= DateTime.now().year) {
+      fetchTransactions();
+      _loadContinuedBalance();
+    }
   }
 
   void _onTabSelected(String type) {
@@ -295,14 +311,14 @@ class HomeYearPageState extends State<HomeYearPage> {
       }).toList();
 
   double get income => currentTransactions
-      .where((tx) => tx['amount'] > 0)
+      .where((tx) => tx['type'] == 'income' && tx['amount'] > 0)
       .fold(0.0, (sum, tx) => sum + tx['amount']);
 
   double get outcome => currentTransactions
-      .where((tx) => tx['amount'] < 0)
+      .where((tx) => tx['type'] == 'outcome' && tx['amount'] < 0)
       .fold(0.0, (sum, tx) => sum + tx['amount'].abs());
 
-  double get total => income - outcome;
+  double get total => income - outcome + continuedBalance;
 
   String _formatCurrency(double amount) {
     return NumberFormat('#,##0', 'id_ID').format(amount);

@@ -33,20 +33,7 @@ class UserAvatarMenu extends StatelessWidget {
       ),
       onSelected: (value) async {
         if (value == 'signout' && onSignOut != null) {
-          final scaffoldMessenger = ScaffoldMessenger.of(context);
-          try {
-            final prefs = await SharedPreferences.getInstance();
-            await prefs.remove('token');
-            if (context.mounted) {
-              Navigator.pushReplacementNamed(context, '/login');
-            }
-          } catch (e) {
-            if (context.mounted) {
-              scaffoldMessenger.showSnackBar(
-                SnackBar(content: Text('Gagal logout: $e')),
-              );
-            }
-          }
+          onSignOut!();
         }
       },
       itemBuilder: (context) => [
@@ -72,14 +59,15 @@ class UserAvatarMenu extends StatelessWidget {
 }
 
 class HomePage extends StatefulWidget {
-  const HomePage({super.key});
+  final DateTime? initialDate;
+  const HomePage({super.key, this.initialDate});
 
   @override
   State<HomePage> createState() => _HomePageState();
 }
 
 class _HomePageState extends State<HomePage> {
-  DateTime startDate = DateTime.now();
+  late DateTime startDate;
   int currentIndex = 0;
   String? avatarPath;
   double weeklyBudget = 0.0;
@@ -97,122 +85,184 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
+    startDate = widget.initialDate ?? DateTime.now();
+    startDate = DateTime(startDate.year, startDate.month, startDate.day - (startDate.weekday - 1));
     _loadAvatar();
-    fetchTransactions();
-    fetchWeeklyBudget();
-    _loadContinuedBalance();
+    _loadCachedData();
+    fetchData();
   }
 
-  Future<void> _loadContinuedBalance() async {
+  Future<void> _loadCachedData() async {
     final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      continuedBalance = prefs.getDouble('continued_balance_weekly') ?? 0.0;
-    });
-  }
+    final weekKey = '${startDate.year}_${_getWeekNumber(startDate)}';
+    final weekBudgetKey = 'budget_weekly_$weekKey';
+    final hasWeekBudgetKey = 'has_weekly_budget_$weekKey';
 
-  Future<void> _saveContinuedBalance() async {
-    final prefs = await SharedPreferences.getInstance();
-    double previousBalance = prefs.getDouble('continued_balance_weekly') ?? 0.0;
-    double newBalance = previousBalance + total;
-    await prefs.setDouble('continued_balance_weekly', newBalance);
-    await prefs.setDouble('continued_balance_monthly', newBalance);
-    await prefs.setDouble('continued_balance_yearly', newBalance);
-  }
-
-  Future<void> fetchWeeklyBudget() async {
-    final prefs = await SharedPreferences.getInstance();
-    final now = startDate;
-    final weekNumber = _getWeekNumber(now);
-    final budgetKey = 'budget_weekly_${now.year}_$weekNumber';
-    final cachedBudget = prefs.getInt(budgetKey);
-    if (cachedBudget != null) {
+    // Load cached transactions
+    final cachedTx = prefs.getString('transactions_weekly_$weekKey');
+    if (cachedTx != null) {
       setState(() {
-        weeklyBudget = cachedBudget.toDouble();
+        transactions = List<Map<String, dynamic>>.from(jsonDecode(cachedTx));
       });
+    } else {
+      setState(() {
+        transactions = [];
+      });
+    }
+
+    // Load cached weekly budget only if it exists
+    final hasWeeklyBudget = prefs.getBool(hasWeekBudgetKey) ?? false;
+    if (hasWeeklyBudget) {
+      final cachedBudget = prefs.getDouble(weekBudgetKey);
+      if (cachedBudget != null) {
+        setState(() {
+          weeklyBudget = cachedBudget;
+        });
+        debugPrint('Loaded cached weekly budget: $weeklyBudget for week $weekKey');
+      }
     } else {
       setState(() {
         weeklyBudget = 0.0;
       });
     }
 
+    // Load continued balance
+    final previousWeek = startDate.subtract(const Duration(days: 7));
+    final previousWeekKey = 'balance_weekly_${previousWeek.year}_${_getWeekNumber(previousWeek)}';
+    setState(() {
+      continuedBalance = prefs.getDouble(previousWeekKey) ?? 0.0;
+    });
+  }
+
+  Future<void> _saveCachedData() async {
+    final prefs = await SharedPreferences.getInstance();
+    final weekKey = '${startDate.year}_${_getWeekNumber(startDate)}';
+    final weekBudgetKey = 'budget_weekly_$weekKey';
+    final hasWeekBudgetKey = 'has_weekly_budget_$weekKey';
+
+    // Save transactions
+    await prefs.setString('transactions_weekly_$weekKey', jsonEncode(transactions));
+
+    // Save weekly budget if it exists
+    if (weeklyBudget > 0) {
+      await prefs.setDouble(weekBudgetKey, weeklyBudget);
+      await prefs.setBool(hasWeekBudgetKey, true);
+      debugPrint('Saved cached weekly budget: $weeklyBudget for week $weekKey');
+    } else {
+      await prefs.remove(weekBudgetKey);
+      await prefs.remove(hasWeekBudgetKey);
+    }
+
+    // Save balance
+    final balanceKey = 'balance_weekly_${startDate.year}_${_getWeekNumber(startDate)}';
+    await prefs.setDouble(balanceKey, total);
+  }
+
+  Future<void> _loadAvatar() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      String? storedAvatar = prefs.getString('avatarUrl');
+      if (storedAvatar == null) {
+        storedAvatar = avatarList[Random().nextInt(avatarList.length)];
+        await prefs.setString('avatarUrl', storedAvatar);
+      }
+      setState(() {
+        avatarPath = storedAvatar;
+      });
+    } catch (e) {
+      debugPrint('Error loading avatar: $e');
+    }
+  }
+
+  Future<void> fetchData() async {
+    setState(() {
+      isLoading = true;
+    });
+    await Future.wait([
+      fetchWeeklyBudget(),
+      fetchTransactions(),
+    ]);
+    setState(() {
+      isLoading = false;
+    });
+  }
+
+  Future<void> fetchWeeklyBudget() async {
     final token = await getTokenFromStorage();
     if (token == null) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Sesi kadaluarsa, silakan login kembali')),
-        );
+        Navigator.pushReplacementNamed(context, '/login');
       }
       return;
     }
-    final weekStart = now.subtract(Duration(days: now.weekday - 1));
-    final weekEnd = weekStart.add(const Duration(days: 6));
+
+    final weekStart = startDate;
+    final weekEnd = startDate.add(const Duration(days: 6));
+    final dateFormat = DateFormat('yyyy-MM-dd');
+    final startFormatted = dateFormat.format(weekStart);
+    final endFormatted = dateFormat.format(weekEnd);
+
     try {
       final response = await http.get(
-        Uri.parse('$apiBaseUrl/plan'),
-        headers: {'Authorization': 'Bearer $token'},
+        Uri.parse('$apiBaseUrl/plan?periode_type=weekly&periode_start=$startFormatted&periode_end=$endFormatted'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
       );
+
       if (response.statusCode == 200) {
         final List<dynamic> plans = jsonDecode(response.body);
-        final plan = plans.firstWhere(
-          (p) =>
-              p['periode_type'] == 'weekly' &&
-              _sameDate(DateTime.parse(p['periode_start']), weekStart) &&
-              _sameDate(DateTime.parse(p['periode_end']), weekEnd),
-          orElse: () => null,
-        );
-        final budgetValue = plan != null ? double.tryParse(plan['nominal'].toString()) ?? 0.0 : 0.0;
+        final budgetValue = plans.isNotEmpty ? double.tryParse(plans[0]['nominal'].toString()) ?? 0.0 : 0.0;
         setState(() {
           weeklyBudget = budgetValue;
-          if (budgetValue > 0) {
-            prefs.setInt(budgetKey, budgetValue.toInt());
-          } else {
-            prefs.remove(budgetKey);
-          }
         });
+        debugPrint('Fetched weekly budget: $budgetValue for $startFormatted to $endFormatted');
+        await _saveCachedData();
       } else {
-        debugPrint('Failed to load budget: ${response.statusCode}');
         setState(() {
           weeklyBudget = 0.0;
-          prefs.remove(budgetKey);
         });
+        debugPrint('No weekly budget found for $startFormatted to $endFormatted');
+        await _saveCachedData();
       }
     } catch (e) {
       debugPrint('Error fetching weekly budget: $e');
       setState(() {
         weeklyBudget = 0.0;
-        prefs.remove(budgetKey);
       });
+      await _saveCachedData();
     }
   }
 
   Future<void> fetchTransactions() async {
-    setState(() {
-      isLoading = true;
-    });
-    try {
-      final token = await getTokenFromStorage();
-      if (token == null) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Sesi kadaluarsa, silakan login kembali')),
-          );
-        }
-        return;
+    final token = await getTokenFromStorage();
+    if (token == null) {
+      if (mounted) {
+        Navigator.pushReplacementNamed(context, '/login');
       }
+      return;
+    }
+
+    final weekStart = startDate;
+    final weekEnd = startDate.add(const Duration(days: 6));
+    final dateFormat = DateFormat('yyyy-MM-dd');
+    final startFormatted = dateFormat.format(weekStart);
+    final endFormatted = dateFormat.format(weekEnd);
+
+    try {
       final response = await http.get(
-        Uri.parse('$apiBaseUrl/transaksi'),
+        Uri.parse('$apiBaseUrl/transaksi?start=$startFormatted&end=$endFormatted'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',
         },
       );
+
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         final List<dynamic> list = data is List ? data : data['transaksi'] ?? [];
-        final now = startDate;
-        final weekStart = now.subtract(Duration(days: now.weekday - 1));
-        final weekEnd = weekStart.add(const Duration(days: 6));
-        List<Map<String, dynamic>> weeklyTransactions = list.map<Map<String, dynamic>>((item) {
+        final weeklyTransactions = list.map<Map<String, dynamic>>((item) {
           String? icon;
           String? categoryName;
           if (item['jenis'] == 'income' && item['income'] != null) {
@@ -222,17 +272,19 @@ class _HomePageState extends State<HomePage> {
             icon = item['outcome']['icon']?.toString();
             categoryName = item['outcome']['nama']?.toString() ?? 'Unknown';
           }
+          final dateString = item['tanggal']?.toString() ?? DateTime.now().toIso8601String();
+          final date = DateTime.tryParse(dateString) ?? DateTime.now();
           return {
             'id': item['id'],
             'title': categoryName ?? 'Unknown',
             'description': item['keterangan']?.toString() ?? '',
-            'date': DateTime.tryParse(item['tanggal'].toString()) ?? DateTime.now(),
+            'date': date.toIso8601String(),
             'amount': double.tryParse(item['nominal'].toString()) ?? 0.0,
             'icon': icon ?? '',
             'type': item['jenis'],
           };
         }).where((tx) {
-          final txDate = tx['date'] as DateTime;
+          final txDate = DateTime.parse(tx['date'] as String);
           return txDate.isAfter(weekStart.subtract(const Duration(days: 1))) &&
               txDate.isBefore(weekEnd.add(const Duration(days: 1)));
         }).toList();
@@ -240,16 +292,19 @@ class _HomePageState extends State<HomePage> {
         setState(() {
           transactions = weeklyTransactions;
         });
-
-        await _saveContinuedBalance();
-        await fetchWeeklyBudget();
+        await _saveCachedData();
+      } else if (response.statusCode == 401) {
+        if (mounted) {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.clear();
+          Navigator.pushReplacementNamed(context, '/login');
+        }
       } else {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Gagal memuat transaksi: ${response.statusCode}')),
           );
         }
-        debugPrint('Failed to load transactions: ${response.body}');
       }
     } catch (e) {
       if (mounted) {
@@ -257,11 +312,6 @@ class _HomePageState extends State<HomePage> {
           SnackBar(content: Text('Error memuat transaksi: $e')),
         );
       }
-      debugPrint('Error fetching transactions: $e');
-    } finally {
-      setState(() {
-        isLoading = false;
-      });
     }
   }
 
@@ -270,13 +320,11 @@ class _HomePageState extends State<HomePage> {
       final token = await getTokenFromStorage();
       if (token == null) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Sesi kadaluarsa, silakan login kembali')),
-          );
           Navigator.pushReplacementNamed(context, '/login');
         }
         return;
       }
+
       final response = await http.delete(
         Uri.parse('$apiBaseUrl/transaksi/$id'),
         headers: {
@@ -284,12 +332,16 @@ class _HomePageState extends State<HomePage> {
           'Authorization': 'Bearer $token',
         },
       );
+
       if (response.statusCode == 200) {
+        setState(() {
+          transactions.removeWhere((tx) => tx['id'] == id);
+        });
+        await _saveCachedData();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Transaksi berhasil dihapus')),
           );
-          fetchTransactions();
         }
       } else {
         if (mounted) {
@@ -307,30 +359,24 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  Future<void> _loadAvatar() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      String? storedAvatar = prefs.getString('avatarUrl');
-
-      if (storedAvatar == null) {
-        storedAvatar = avatarList[Random().nextInt(avatarList.length)];
-        await prefs.setString('avatarUrl', storedAvatar);
-      }
-
-      setState(() {
-        avatarPath = storedAvatar;
-      });
-    } catch (e) {
-      debugPrint('Error loading avatar: $e');
-    }
-  }
-
   void _navigateWeek(int direction) {
     setState(() {
       startDate = startDate.add(Duration(days: 7 * direction));
     });
-    fetchWeeklyBudget();
-    fetchTransactions();
+    _loadCachedData();
+    fetchData();
+  }
+
+  void _onTabSelected(String type) {
+    if (!mounted) return;
+    switch (type) {
+      case 'monthly':
+        Navigator.pushReplacementNamed(context, '/home_month', arguments: {'initialDate': startDate});
+        break;
+      case 'yearly':
+        Navigator.pushReplacementNamed(context, '/home_year', arguments: {'initialDate': startDate});
+        break;
+    }
   }
 
   void _onBottomNavTap(int index) {
@@ -339,56 +385,36 @@ class _HomePageState extends State<HomePage> {
     });
     if (!mounted) return;
     switch (index) {
+      case 0:
+        break;
       case 1:
-        Navigator.pushNamed(context, '/chart_page').then((_) => fetchWeeklyBudget());
+        Navigator.pushReplacementNamed(context, '/chart_page');
         break;
       case 2:
-        Navigator.pushNamed(context, '/budget_page').then((_) => fetchWeeklyBudget());
+        Navigator.pushReplacementNamed(context, '/budget_page');
         break;
     }
   }
 
-  void _onTabSelected(String type) {
-    if (!mounted) return;
-    switch (type) {
-      case 'monthly':
-        Navigator.pushNamed(context, '/home_month').then((_) => fetchWeeklyBudget());
-        break;
-      case 'yearly':
-        Navigator.pushNamed(context, '/home_year').then((_) => fetchWeeklyBudget());
-        break;
-    }
-  }
-
-  String get startFormatted =>
-      '${startDate.day}/${startDate.month}/${startDate.year}';
+  String get startFormatted => '${startDate.day}/${startDate.month}/${startDate.year}';
 
   String get endFormatted {
     final endDate = startDate.add(const Duration(days: 6));
     return '${endDate.day}/${endDate.month}/${endDate.year}';
   }
 
-  List<Map<String, dynamic>> get currentWeekTransactions {
-    final endDate = startDate.add(const Duration(days: 6));
-    return transactions.where((tx) {
-      final txDate = tx['date'] as DateTime;
-      return txDate.isAfter(startDate.subtract(const Duration(days: 1))) &&
-          txDate.isBefore(endDate.add(const Duration(days: 1)));
-    }).toList();
-  }
+  double get income => transactions
+      .where((tx) => tx['type'] == 'income')
+      .fold(0.0, (sum, tx) => sum + (tx['amount'] as double));
 
-  double get income => currentWeekTransactions
-      .where((tx) => tx['type'] == 'income' && tx['amount'] > 0)
-      .fold(0.0, (sum, tx) => sum + tx['amount']);
+  double get outcome => transactions
+      .where((tx) => tx['type'] == 'outcome')
+      .fold(0.0, (sum, tx) => sum + (tx['amount'] as double).abs());
 
-  double get outcome => currentWeekTransactions
-      .where((tx) => tx['type'] == 'outcome' && tx['amount'] < 0)
-      .fold(0.0, (sum, tx) => sum + tx['amount'].abs());
-
-  double get total => income - outcome;
+  double get total => income - outcome + continuedBalance;
 
   String _formatCurrency(double amount) {
-    return NumberFormat('#,##0', 'id_ID').format(amount);
+    return NumberFormat('#,##0', 'id_ID').format(amount.abs());
   }
 
   Color _getProgressColor(double progress) {
@@ -402,9 +428,6 @@ class _HomePageState extends State<HomePage> {
     final days = date.difference(firstJan).inDays;
     return ((days + firstJan.weekday) / 7).ceil();
   }
-
-  bool _sameDate(DateTime a, DateTime b) =>
-      a.year == b.year && a.month == b.month && a.day == b.day;
 
   @override
   Widget build(BuildContext context) {
@@ -474,19 +497,10 @@ class _HomePageState extends State<HomePage> {
                               UserAvatarMenu(
                                 avatarPath: avatarPath,
                                 onSignOut: () async {
-                                  final scaffoldMessenger = ScaffoldMessenger.of(context);
-                                  try {
-                                    final prefs = await SharedPreferences.getInstance();
-                                    await prefs.remove('token');
-                                    if (context.mounted) {
-                                      Navigator.pushReplacementNamed(context, '/login');
-                                    }
-                                  } catch (e) {
-                                    if (context.mounted) {
-                                      scaffoldMessenger.showSnackBar(
-                                        SnackBar(content: Text('Gagal logout: $e')),
-                                      );
-                                    }
+                                  final prefs = await SharedPreferences.getInstance();
+                                  await prefs.clear();
+                                  if (mounted) {
+                                    Navigator.pushReplacementNamed(context, '/login');
                                   }
                                 },
                               ),
@@ -517,7 +531,7 @@ class _HomePageState extends State<HomePage> {
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: Row(
                       children: [
-                        _buildTab('weekly', true, () => null),
+                        _buildTab('weekly', true, () {}),
                         const SizedBox(width: 8),
                         _buildTab('monthly', false, () => _onTabSelected('monthly')),
                         const SizedBox(width: 8),
@@ -533,7 +547,7 @@ class _HomePageState extends State<HomePage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Rp ${_formatCurrency(total)}',
+                            'Rp ${_formatCurrency(outcome)}',
                             style: const TextStyle(
                               fontWeight: FontWeight.w600,
                               fontSize: 14,
@@ -551,7 +565,7 @@ class _HomePageState extends State<HomePage> {
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
                               Text(
-                                'Outcome: ${_formatCurrency(outcome)}',
+                                'Budget Left: ${_formatCurrency(weeklyBudget - outcome)}',
                                 style: const TextStyle(
                                   fontSize: 12,
                                   color: Colors.grey,
@@ -573,7 +587,7 @@ class _HomePageState extends State<HomePage> {
                     ),
                     const SizedBox(height: 16),
                   ],
-                  if (currentWeekTransactions.isEmpty)
+                  if (transactions.isEmpty)
                     Padding(
                       padding: const EdgeInsets.only(top: 32),
                       child: Column(
@@ -596,7 +610,7 @@ class _HomePageState extends State<HomePage> {
                     )
                   else
                     Column(
-                      children: currentWeekTransactions.map((tx) {
+                      children: transactions.map((tx) {
                         return Slidable(
                           key: ValueKey(tx['id']),
                           endActionPane: ActionPane(
@@ -609,17 +623,17 @@ class _HomePageState extends State<HomePage> {
                                     '/edit_page',
                                     arguments: tx,
                                   ).then((result) {
-                                    if (result == true) fetchTransactions();
+                                    if (result == true) fetchData();
                                   });
                                 },
-                                backgroundColor: Color.fromARGB(255, 224, 214, 235),
+                                backgroundColor: const Color.fromARGB(255, 224, 214, 235),
                                 foregroundColor: Colors.white,
                                 icon: Icons.edit,
                                 label: 'Edit',
                               ),
                               SlidableAction(
                                 onPressed: (context) => deleteTransaction(tx['id']),
-                                backgroundColor: Color.fromARGB(255, 224, 214, 235),
+                                backgroundColor: const Color.fromARGB(255, 224, 214, 235),
                                 foregroundColor: Colors.white,
                                 icon: Icons.delete,
                                 label: 'Delete',
@@ -627,14 +641,14 @@ class _HomePageState extends State<HomePage> {
                             ],
                           ),
                           child: _buildTransactionItem(
-                            tx['title'],
-                            '${tx['date'].day}/${tx['date'].month}/${tx['date'].year}',
-                            tx['amount'] > 0
-                                ? '+Rp ${_formatCurrency(tx['amount'].abs())}'
-                                : '-Rp ${_formatCurrency(tx['amount'].abs())}',
-                            tx['icon'],
-                            tx['description'],
-                            tx['amount'] > 0 ? Colors.green : Colors.red,
+                            tx['title'] as String,
+                            '${DateTime.parse(tx['date'] as String).day}/${DateTime.parse(tx['date'] as String).month}/${DateTime.parse(tx['date'] as String).year}',
+                            (tx['amount'] as double) > 0
+                                ? '+Rp ${_formatCurrency(tx['amount'] as double)}'
+                                : '-Rp ${_formatCurrency(tx['amount'] as double)}',
+                            tx['icon'] as String?,
+                            tx['description'] as String,
+                            (tx['amount'] as double) > 0 ? Colors.green : Colors.red,
                           ),
                         );
                       }).toList(),
@@ -645,10 +659,7 @@ class _HomePageState extends State<HomePage> {
             ),
       floatingActionButton: FloatingActionButton(
         onPressed: () {
-          Navigator.pushNamed(context, '/add_page').then((_) {
-            fetchTransactions();
-            fetchWeeklyBudget();
-          });
+          Navigator.pushNamed(context, '/add_page').then((_) => fetchData());
         },
         backgroundColor: const Color(0xFF724E99),
         shape: RoundedRectangleBorder(
@@ -756,11 +767,23 @@ class _HomePageState extends State<HomePage> {
               backgroundColor: Colors.deepPurple[100],
               radius: 18,
               child: iconUrl != null && iconUrl.isNotEmpty
-                  ? iconUrl.toLowerCase().endsWith('.svg')
-                      ? SvgPicture.network(
-                          'http://10.0.2.2:8000/storage/$iconUrl',
+                  ? FutureBuilder<String?>(
+                      future: getTokenFromStorage(),
+                      builder: (context, snapshot) {
+                        if (!snapshot.hasData || snapshot.data == null) {
+                          return const Icon(
+                            Icons.category,
+                            size: 20,
+                            color: Color(0xFF724E99),
+                          );
+                        }
+                        return SvgPicture.network(
+                          iconUrl.startsWith('http') ? iconUrl : 'http://10.0.2.2:8000/storage/$iconUrl',
                           width: 20,
                           height: 20,
+                          headers: {
+                            'Authorization': 'Bearer ${snapshot.data}',
+                          },
                           colorFilter: const ColorFilter.mode(
                             Color(0xFF724E99),
                             BlendMode.srcIn,
@@ -770,20 +793,11 @@ class _HomePageState extends State<HomePage> {
                             size: 20,
                             color: Color(0xFF724E99),
                           ),
-                        )
-                      : Image.network(
-                          'http://10.0.2.2:8000/storage/$iconUrl',
-                          width: 20,
-                          height: 20,
-                          errorBuilder: (context, error, stackTrace) {
-                            debugPrint('Error loading image: $error');
-                            return const Icon(
-                              Icons.category,
-                              size: 20,
-                              color: Color(0xFF724E99),
-                            );
-                          },
-                        )
+                          fit: BoxFit.contain,
+                          semanticsLabel: 'Ikon Kategori',
+                        );
+                      },
+                    )
                   : const Icon(
                       Icons.category,
                       size: 20,

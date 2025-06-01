@@ -225,7 +225,7 @@ class _ChartPageState extends State<ChartPage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Text(
-                            'Sisa saldo',
+                            'Wallet',
                             style: TextStyle(
                               fontFamily: 'Poppins',
                               fontSize: 14,

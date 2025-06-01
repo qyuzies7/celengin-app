@@ -26,6 +26,13 @@ class _LoginPageState extends State<LoginPage> {
     _loadRemembered();
   }
 
+  Future<void> _clearSessionCredentials() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('token');
+    await prefs.remove('userId');
+    debugPrint('Cleared session credentials (token and userId)');
+  }
+
   Future<void> _loadRemembered() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
@@ -55,7 +62,7 @@ class _LoginPageState extends State<LoginPage> {
       _isLoading = true;
     });
 
-    final email = _emailController.text;
+    final email = _emailController.text.trim();
     final password = _passwordController.text;
 
     final emailRegex = RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$');
@@ -75,27 +82,33 @@ class _LoginPageState extends State<LoginPage> {
             'password': password,
           }),
         );
-        debugPrint('Login response: ${response.statusCode} - ${response.body}');
 
         final responseData = jsonDecode(response.body);
         if (response.statusCode == 200) {
           final data = responseData['data'] ?? responseData;
-          final token = data['access_token']?.toString() ?? data['token']?.toString();
-          final userId = int.tryParse(data['pengguna']?['id']?.toString() ?? '');
+          final token = data['access_token']?.toString();
+          final userId = int.tryParse(data['pengguna']?['id']?.toString() ?? '0');
 
-          if (token == null) {
-            throw Exception('Token tidak ditemukan dalam response');
-          }
-          if (userId == null) {
-            throw Exception('User ID tidak ditemukan dalam response');
+          if (token == null || userId == null) {
+            throw Exception('Invalid response from server');
           }
 
           final prefs = await SharedPreferences.getInstance();
+          final storedUserId = prefs.getInt('userId');
+
+          if (storedUserId != null && storedUserId != userId) {
+            // Jika akun berbeda, hapus semua cache
+            await prefs.clear();
+            debugPrint('Cleared all cache due to different user');
+          } else {
+            // Jika akun sama atau tidak ada userId sebelumnya, hanya hapus sesi
+            await _clearSessionCredentials();
+          }
+
+          // Simpan token, userId, dan data "Remember me"
           await prefs.setString('token', token);
           await prefs.setInt('userId', userId);
-          debugPrint('Saved token: $token, userId: $userId');
           await _saveRemembered();
-          await Future.delayed(const Duration(milliseconds: 200));
 
           if (mounted) {
             Navigator.pushReplacementNamed(context, '/home');
@@ -110,7 +123,6 @@ class _LoginPageState extends State<LoginPage> {
         if (mounted) {
           _showDialog('Error: $e');
         }
-        debugPrint('Login error: $e');
       } finally {
         setState(() {
           _isLoading = false;
@@ -315,7 +327,7 @@ class _LoginPageState extends State<LoginPage> {
                       const SizedBox(height: 8),
                       Center(
                         child: TextButton(
-                          onPressed: () => Navigator.pushNamed(context, '/register'),
+                          onPressed: () => Navigator.pushReplacementNamed(context, '/register'),
                           child: RichText(
                             text: const TextSpan(
                               text: "Don't have an account? ",

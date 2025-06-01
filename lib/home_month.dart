@@ -33,20 +33,7 @@ class UserAvatarMenu extends StatelessWidget {
       ),
       onSelected: (value) async {
         if (value == 'signout' && onSignOut != null) {
-          final scaffoldMessenger = ScaffoldMessenger.of(context);
-          try {
-            final prefs = await SharedPreferences.getInstance();
-            await prefs.remove('token');
-            if (context.mounted) {
-              Navigator.pushReplacementNamed(context, '/login');
-            }
-          } catch (e) {
-            if (context.mounted) {
-              scaffoldMessenger.showSnackBar(
-                SnackBar(content: Text('Gagal logout: $e')),
-              );
-            }
-          }
+          onSignOut!();
         }
       },
       itemBuilder: (context) => [
@@ -72,14 +59,15 @@ class UserAvatarMenu extends StatelessWidget {
 }
 
 class HomeMonthPage extends StatefulWidget {
-  const HomeMonthPage({super.key});
+  final DateTime? initialDate;
+  const HomeMonthPage({super.key, this.initialDate});
 
   @override
   State<HomeMonthPage> createState() => _HomeMonthPageState();
 }
 
 class _HomeMonthPageState extends State<HomeMonthPage> {
-  DateTime currentMonth = DateTime.now();
+  late DateTime currentMonth;
   List<Map<String, dynamic>> allTransactions = [];
   double monthlyBudget = 0.0;
   int currentIndex = 0;
@@ -97,37 +85,81 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
   @override
   void initState() {
     super.initState();
+    currentMonth = widget.initialDate ?? DateTime.now();
+    currentMonth = DateTime(currentMonth.year, currentMonth.month, 1);
     _loadAvatar();
-    fetchTransactions();
-    fetchMonthlyBudget();
-    _loadContinuedBalance();
+    _loadCachedData();
+    fetchData();
   }
 
-  Future<void> _loadContinuedBalance() async {
+  Future<void> _loadCachedData() async {
     final prefs = await SharedPreferences.getInstance();
+    final monthKey = '${currentMonth.year}_${currentMonth.month}';
+    final monthBudgetKey = 'budget_monthly_$monthKey';
+    final hasMonthBudgetKey = 'has_monthly_budget_$monthKey';
+
+    final cachedTx = prefs.getString('transactions_monthly_$monthKey');
+    if (cachedTx != null) {
+      setState(() {
+        allTransactions = List<Map<String, dynamic>>.from(jsonDecode(cachedTx));
+      });
+    } else {
+      setState(() {
+        allTransactions = [];
+      });
+    }
+
+    final hasMonthlyBudget = prefs.getBool(hasMonthBudgetKey) ?? false;
+    if (hasMonthlyBudget) {
+      final cachedBudget = prefs.getDouble(monthBudgetKey);
+      if (cachedBudget != null) {
+        setState(() {
+          monthlyBudget = cachedBudget;
+        });
+        debugPrint('Loaded cached monthly budget: $monthlyBudget for month $monthKey');
+      }
+    } else {
+      setState(() {
+        monthlyBudget = 0.0;
+      });
+    }
+
+    final previousMonth = DateTime(currentMonth.year, currentMonth.month - 1);
+    final previousMonthKey = 'balance_monthly_${previousMonth.year}_${previousMonth.month}';
     setState(() {
-      continuedBalance = prefs.getDouble('continued_balance_monthly') ?? 0.0;
+      continuedBalance = prefs.getDouble(previousMonthKey) ?? 0.0;
     });
   }
 
-  Future<void> _saveContinuedBalance() async {
+  Future<void> _saveCachedData() async {
     final prefs = await SharedPreferences.getInstance();
-    double previousBalance = prefs.getDouble('continued_balance_monthly') ?? 0.0;
-    double newBalance = previousBalance + total;
-    await prefs.setDouble('continued_balance_monthly', newBalance);
-    await prefs.setDouble('continued_balance_yearly', newBalance);
+    final monthKey = '${currentMonth.year}_${currentMonth.month}';
+    final monthBudgetKey = 'budget_monthly_$monthKey';
+    final hasMonthBudgetKey = 'has_monthly_budget_$monthKey';
+
+    await prefs.setString('transactions_monthly_$monthKey', jsonEncode(allTransactions));
+
+    if (monthlyBudget > 0) {
+      await prefs.setDouble(monthBudgetKey, monthlyBudget);
+      await prefs.setBool(hasMonthBudgetKey, true);
+      debugPrint('Saved cached monthly budget: $monthlyBudget for month $monthKey');
+    } else {
+      await prefs.remove(monthBudgetKey);
+      await prefs.remove(hasMonthBudgetKey);
+    }
+
+    final balanceKey = 'balance_monthly_${currentMonth.year}_${currentMonth.month}';
+    await prefs.setDouble(balanceKey, total);
   }
 
   Future<void> _loadAvatar() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       String? storedAvatar = prefs.getString('avatarUrl');
-
       if (storedAvatar == null) {
         storedAvatar = avatarList[Random().nextInt(avatarList.length)];
         await prefs.setString('avatarUrl', storedAvatar);
       }
-
       setState(() {
         avatarPath = storedAvatar;
       });
@@ -136,96 +168,89 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
     }
   }
 
-  Future<void> fetchMonthlyBudget() async {
-    final prefs = await SharedPreferences.getInstance();
-    final now = currentMonth;
-    final budgetKey = 'budget_monthly_${now.year}_${now.month}';
-    final cachedBudget = prefs.getInt(budgetKey);
-    if (cachedBudget != null) {
-      setState(() {
-        monthlyBudget = cachedBudget.toDouble();
-      });
-    } else {
-      setState(() {
-        monthlyBudget = 0.0;
-      });
-    }
+  Future<void> fetchData() async {
+    setState(() {
+      isLoading = true;
+    });
+    await Future.wait([
+      fetchMonthlyBudget(),
+      fetchTransactions(),
+    ]);
+    setState(() {
+      isLoading = false;
+    });
+  }
 
+  Future<void> fetchMonthlyBudget() async {
     final token = await getTokenFromStorage();
     if (token == null) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Sesi kadaluarsa, silakan login kembali')),
-        );
+        Navigator.pushReplacementNamed(context, '/login');
       }
       return;
     }
+
     final monthStart = DateTime(currentMonth.year, currentMonth.month, 1);
     final monthEnd = DateTime(currentMonth.year, currentMonth.month + 1, 0);
+    final dateFormat = DateFormat('yyyy-MM-dd');
+    final startFormatted = dateFormat.format(monthStart);
+    final endFormatted = dateFormat.format(monthEnd);
+
     try {
       final response = await http.get(
-        Uri.parse('$apiBaseUrl/plan'),
-        headers: {'Authorization': 'Bearer $token'},
+        Uri.parse('$apiBaseUrl/plan?periode_type=monthly&periode_start=$startFormatted&periode_end=$endFormatted'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
       );
+
       if (response.statusCode == 200) {
         final List<dynamic> plans = jsonDecode(response.body);
-        final plan = plans.firstWhere(
-          (p) =>
-              p['periode_type'] == 'monthly' &&
-              _sameDate(DateTime.parse(p['periode_start']), monthStart) &&
-              _sameDate(DateTime.parse(p['periode_end']), monthEnd),
-          orElse: () => null,
-        );
-        final budgetValue = plan != null ? double.tryParse(plan['nominal'].toString()) ?? 0.0 : 0.0;
+        final budgetValue = plans.isNotEmpty ? double.tryParse(plans[0]['nominal'].toString()) ?? 0.0 : 0.0;
         setState(() {
           monthlyBudget = budgetValue;
-          if (budgetValue > 0) {
-            prefs.setInt(budgetKey, budgetValue.toInt());
-          } else {
-            prefs.remove(budgetKey);
-          }
         });
+        debugPrint('Fetched monthly budget: $budgetValue for $startFormatted to $endFormatted');
+        await _saveCachedData();
       } else {
-        debugPrint('Failed to load budget: ${response.statusCode}');
         setState(() {
           monthlyBudget = 0.0;
-          prefs.remove(budgetKey);
         });
+        debugPrint('No monthly budget found for $startFormatted to $endFormatted');
+        await _saveCachedData();
       }
     } catch (e) {
       debugPrint('Error fetching monthly budget: $e');
       setState(() {
         monthlyBudget = 0.0;
-        prefs.remove(budgetKey);
       });
+      await _saveCachedData();
     }
   }
 
   Future<void> fetchTransactions() async {
-    setState(() {
-      isLoading = true;
-    });
-    try {
-      final token = await getTokenFromStorage();
-      if (token == null) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Sesi kadaluarsa, silakan login kembali')),
-          );
-        }
-        return;
+    final token = await getTokenFromStorage();
+    if (token == null) {
+      if (mounted) {
+        Navigator.pushReplacementNamed(context, '/login');
       }
+      return;
+    }
+
+    try {
       final response = await http.get(
-        Uri.parse('$apiBaseUrl/transaksi'),
+        Uri.parse('$apiBaseUrl/transaksi?year=${currentMonth.year}&month=${currentMonth.month}'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',
         },
       );
+
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         final List<dynamic> list = data is List ? data : data['transaksi'] ?? [];
-        List<Map<String, dynamic>> monthlyTransactions = list.map<Map<String, dynamic>>((item) {
+        final monthlyTransactions = list.map<Map<String, dynamic>>((item) {
           String? icon;
           String? categoryName;
           if (item['jenis'] == 'income' && item['income'] != null) {
@@ -235,33 +260,38 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
             icon = item['outcome']['icon']?.toString();
             categoryName = item['outcome']['nama']?.toString() ?? 'Unknown';
           }
+          final dateString = item['tanggal']?.toString() ?? DateTime.now().toIso8601String();
+          final date = DateTime.tryParse(dateString) ?? DateTime.now();
           return {
             'id': item['id'],
             'title': categoryName ?? 'Unknown',
             'description': item['keterangan']?.toString() ?? '',
-            'date': DateTime.tryParse(item['tanggal'].toString()) ?? DateTime.now(),
+            'date': date.toIso8601String(),
             'amount': double.tryParse(item['nominal'].toString()) ?? 0.0,
             'icon': icon ?? '',
             'type': item['jenis'],
           };
         }).where((tx) {
-          final txDate = tx['date'] as DateTime;
+          final txDate = DateTime.parse(tx['date'] as String);
           return txDate.month == currentMonth.month && txDate.year == currentMonth.year;
         }).toList();
 
         setState(() {
           allTransactions = monthlyTransactions;
         });
-
-        await _saveContinuedBalance();
-        await fetchMonthlyBudget(); // Refresh budget to reflect new transactions
+        await _saveCachedData();
+      } else if (response.statusCode == 401) {
+        if (mounted) {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.clear();
+          Navigator.pushReplacementNamed(context, '/login');
+        }
       } else {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Gagal memuat transaksi: ${response.statusCode}')),
           );
         }
-        debugPrint('Failed to load transactions: ${response.body}');
       }
     } catch (e) {
       if (mounted) {
@@ -269,11 +299,6 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
           SnackBar(content: Text('Error memuat transaksi: $e')),
         );
       }
-      debugPrint('Error fetching transactions: $e');
-    } finally {
-      setState(() {
-        isLoading = false;
-      });
     }
   }
 
@@ -282,13 +307,11 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
       final token = await getTokenFromStorage();
       if (token == null) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Sesi kadaluarsa, silakan login kembali')),
-          );
           Navigator.pushReplacementNamed(context, '/login');
         }
         return;
       }
+
       final response = await http.delete(
         Uri.parse('$apiBaseUrl/transaksi/$id'),
         headers: {
@@ -296,12 +319,16 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
           'Authorization': 'Bearer $token',
         },
       );
+
       if (response.statusCode == 200) {
+        setState(() {
+          allTransactions.removeWhere((tx) => tx['id'] == id);
+        });
+        await _saveCachedData();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Transaksi berhasil dihapus')),
           );
-          fetchTransactions();
         }
       } else {
         if (mounted) {
@@ -313,7 +340,7 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error menghapus transaksi: $e')),
+          SnackBar(content: Text('Error deleting transaksi: $e')),
         );
       }
     }
@@ -323,18 +350,18 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
     setState(() {
       currentMonth = DateTime(currentMonth.year, currentMonth.month + direction);
     });
-    fetchMonthlyBudget();
-    fetchTransactions();
+    _loadCachedData();
+    fetchData();
   }
 
   void _onTabSelected(String type) {
     if (!mounted) return;
     switch (type) {
       case 'weekly':
-        Navigator.pushNamed(context, '/home').then((_) => fetchMonthlyBudget());
+        Navigator.pushReplacementNamed(context, '/home', arguments: {'initialDate': currentMonth});
         break;
       case 'yearly':
-        Navigator.pushNamed(context, '/home_year').then((_) => fetchMonthlyBudget());
+        Navigator.pushReplacementNamed(context, '/home_year', arguments: {'initialDate': DateTime(currentMonth.year)});
         break;
     }
   }
@@ -346,36 +373,30 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
     if (!mounted) return;
     switch (index) {
       case 0:
-        Navigator.pushNamed(context, '/home').then((_) => fetchMonthlyBudget());
         break;
       case 1:
-        Navigator.pushNamed(context, '/chart_page').then((_) => fetchMonthlyBudget());
+        Navigator.pushReplacementNamed(context, '/chart_page');
         break;
       case 2:
-        Navigator.pushNamed(context, '/budget_page').then((_) => fetchMonthlyBudget());
+        Navigator.pushReplacementNamed(context, '/budget_page');
         break;
     }
   }
 
   String get monthFormatted => '${currentMonth.month}/${currentMonth.year}';
 
-  List<Map<String, dynamic>> get currentTransactions => allTransactions.where((tx) {
-        final txDate = tx['date'] as DateTime;
-        return txDate.month == currentMonth.month && txDate.year == currentMonth.year;
-      }).toList();
+  double get income => allTransactions
+      .where((tx) => tx['type'] == 'income')
+      .fold(0.0, (sum, tx) => sum + (tx['amount'] as double));
 
-  double get income => currentTransactions
-      .where((tx) => tx['type'] == 'income' && tx['amount'] > 0)
-      .fold(0.0, (sum, tx) => sum + tx['amount']);
+  double get outcome => allTransactions
+      .where((tx) => tx['type'] == 'outcome')
+      .fold(0.0, (sum, tx) => sum + (tx['amount'] as double).abs());
 
-  double get outcome => currentTransactions
-      .where((tx) => tx['type'] == 'outcome' && tx['amount'] < 0)
-      .fold(0.0, (sum, tx) => sum + tx['amount'].abs());
-
-  double get total => income - outcome;
+  double get total => income - outcome + continuedBalance;
 
   String _formatCurrency(double amount) {
-    return NumberFormat('#,##0', 'id_ID').format(amount);
+    return NumberFormat('#,##0', 'id_ID').format(amount.abs());
   }
 
   Color _getProgressColor(double progress) {
@@ -383,9 +404,6 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
     if (progress < 0.8) return Colors.orange;
     return Colors.red;
   }
-
-  bool _sameDate(DateTime a, DateTime b) =>
-      a.year == b.year && a.month == b.month && a.day == b.day;
 
   @override
   Widget build(BuildContext context) {
@@ -442,19 +460,10 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
                               UserAvatarMenu(
                                 avatarPath: avatarPath,
                                 onSignOut: () async {
-                                  final scaffoldMessenger = ScaffoldMessenger.of(context);
-                                  try {
-                                    final prefs = await SharedPreferences.getInstance();
-                                    await prefs.remove('token');
-                                    if (context.mounted) {
-                                      Navigator.pushReplacementNamed(context, '/login');
-                                    }
-                                  } catch (e) {
-                                    if (context.mounted) {
-                                      scaffoldMessenger.showSnackBar(
-                                        SnackBar(content: Text('Gagal logout: $e')),
-                                      );
-                                    }
+                                  final prefs = await SharedPreferences.getInstance();
+                                  await prefs.clear();
+                                  if (mounted) {
+                                    Navigator.pushReplacementNamed(context, '/login');
                                   }
                                 },
                               ),
@@ -487,7 +496,7 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
                       children: [
                         _buildTab('weekly', false, () => _onTabSelected('weekly')),
                         const SizedBox(width: 8),
-                        _buildTab('monthly', true, () => {}),
+                        _buildTab('monthly', true, () {}),
                         const SizedBox(width: 8),
                         _buildTab('yearly', false, () => _onTabSelected('yearly')),
                       ],
@@ -501,7 +510,7 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Rp ${_formatCurrency(total)}',
+                            'Rp ${_formatCurrency(outcome)}',
                             style: const TextStyle(
                               fontWeight: FontWeight.w600,
                               fontSize: 14,
@@ -519,7 +528,7 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
                               Text(
-                                'Outcome: ${_formatCurrency(outcome)}',
+                                'Budget Left: ${_formatCurrency(monthlyBudget - outcome)}',
                                 style: const TextStyle(
                                   fontSize: 12,
                                   color: Colors.grey,
@@ -541,7 +550,7 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
                     ),
                     const SizedBox(height: 16),
                   ],
-                  if (currentTransactions.isEmpty)
+                  if (allTransactions.isEmpty)
                     Padding(
                       padding: const EdgeInsets.only(top: 32),
                       child: Column(
@@ -553,7 +562,7 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
                           ),
                           const SizedBox(height: 12),
                           const Text(
-                            'No transactions for this month',
+                            'No transactions found for this month',
                             style: TextStyle(
                               color: Colors.grey,
                               fontFamily: 'Poppins',
@@ -564,7 +573,7 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
                     )
                   else
                     Column(
-                      children: currentTransactions.map((tx) {
+                      children: allTransactions.map((tx) {
                         return Slidable(
                           key: ValueKey(tx['id']),
                           endActionPane: ActionPane(
@@ -577,17 +586,17 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
                                     '/edit_page',
                                     arguments: tx,
                                   ).then((result) {
-                                    if (result == true) fetchTransactions();
+                                    if (result == true) fetchData();
                                   });
                                 },
-                                backgroundColor: Color.fromARGB(255, 224, 214, 235),
+                                backgroundColor: const Color.fromARGB(255, 224, 214, 235),
                                 foregroundColor: Colors.white,
                                 icon: Icons.edit,
                                 label: 'Edit',
                               ),
                               SlidableAction(
                                 onPressed: (context) => deleteTransaction(tx['id']),
-                                backgroundColor: Color.fromARGB(255, 224, 214, 235),
+                                backgroundColor: const Color.fromARGB(255, 224, 214, 235),
                                 foregroundColor: Colors.white,
                                 icon: Icons.delete,
                                 label: 'Delete',
@@ -595,14 +604,14 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
                             ],
                           ),
                           child: _buildTransactionItem(
-                            tx['title'],
-                            '${tx['date'].day}/${tx['date'].month}/${tx['date'].year}',
-                            tx['amount'] > 0
-                                ? '+Rp ${_formatCurrency(tx['amount'].abs())}'
-                                : '-Rp ${_formatCurrency(tx['amount'].abs())}',
-                            tx['icon'],
-                            tx['description'],
-                            tx['amount'] > 0 ? Colors.green : Colors.red,
+                            tx['title'] as String,
+                            '${DateTime.parse(tx['date'] as String).day}/${DateTime.parse(tx['date'] as String).month}/${DateTime.parse(tx['date'] as String).year}',
+                            (tx['amount'] as double) > 0
+                                ? '+Rp ${_formatCurrency(tx['amount'] as double)}'
+                                : '-Rp ${_formatCurrency(tx['amount'] as double)}',
+                            tx['icon'] as String?,
+                            tx['description'] as String,
+                            (tx['amount'] as double) > 0 ? Colors.green : Colors.red,
                           ),
                         );
                       }).toList(),
@@ -613,10 +622,7 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
             ),
       floatingActionButton: FloatingActionButton(
         onPressed: () {
-          Navigator.pushNamed(context, '/add_page').then((_) {
-            fetchTransactions();
-            fetchMonthlyBudget();
-          });
+          Navigator.pushNamed(context, '/add_page').then((_) => fetchData());
         },
         backgroundColor: const Color(0xFF724E99),
         shape: RoundedRectangleBorder(
@@ -724,11 +730,23 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
               backgroundColor: Colors.deepPurple[100],
               radius: 18,
               child: iconUrl != null && iconUrl.isNotEmpty
-                  ? iconUrl.toLowerCase().endsWith('.svg')
-                      ? SvgPicture.network(
-                          'http://10.0.2.2:8000/storage/$iconUrl',
+                  ? FutureBuilder<String?>(
+                      future: getTokenFromStorage(),
+                      builder: (context, snapshot) {
+                        if (!snapshot.hasData || snapshot.data == null) {
+                          return const Icon(
+                            Icons.category,
+                            size: 20,
+                            color: Color(0xFF724E99),
+                          );
+                        }
+                        return SvgPicture.network(
+                          iconUrl.startsWith('http') ? iconUrl : 'http://10.0.2.2:8000/storage/$iconUrl',
                           width: 20,
                           height: 20,
+                          headers: {
+                            'Authorization': 'Bearer ${snapshot.data}',
+                          },
                           colorFilter: const ColorFilter.mode(
                             Color(0xFF724E99),
                             BlendMode.srcIn,
@@ -738,20 +756,11 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
                             size: 20,
                             color: Color(0xFF724E99),
                           ),
-                        )
-                      : Image.network(
-                          'http://10.0.2.2:8000/storage/$iconUrl',
-                          width: 20,
-                          height: 20,
-                          errorBuilder: (context, error, stackTrace) {
-                            debugPrint('Error loading image: $error');
-                            return const Icon(
-                              Icons.error,
-                              size: 20,
-                              color: Color(0xFF724E99),
-                            );
-                          },
-                        )
+                          fit: BoxFit.contain,
+                          semanticsLabel: 'Ikon Kategori',
+                        );
+                      },
+                    )
                   : const Icon(
                       Icons.category,
                       size: 20,
