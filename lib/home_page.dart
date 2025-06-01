@@ -71,6 +71,7 @@ class _HomePageState extends State<HomePage> {
   int currentIndex = 0;
   String? avatarPath;
   double weeklyBudget = 0.0;
+  bool hasWeeklyBudget = false;
   List<Map<String, dynamic>> transactions = [];
   bool isLoading = false;
   double continuedBalance = 0.0;
@@ -98,7 +99,6 @@ class _HomePageState extends State<HomePage> {
     final weekBudgetKey = 'budget_weekly_$weekKey';
     final hasWeekBudgetKey = 'has_weekly_budget_$weekKey';
 
-    // Load cached transactions
     final cachedTx = prefs.getString('transactions_weekly_$weekKey');
     if (cachedTx != null) {
       setState(() {
@@ -110,13 +110,16 @@ class _HomePageState extends State<HomePage> {
       });
     }
 
-    // Load cached weekly budget only if it exists
-    final hasWeeklyBudget = prefs.getBool(hasWeekBudgetKey) ?? false;
+    final hasBudget = prefs.getBool(hasWeekBudgetKey) ?? false;
+    setState(() {
+      hasWeeklyBudget = hasBudget;
+    });
+
     if (hasWeeklyBudget) {
-      final cachedBudget = prefs.getDouble(weekBudgetKey);
+      final cachedBudget = prefs.get(weekBudgetKey); // Use get() instead of getDouble()
       if (cachedBudget != null) {
         setState(() {
-          weeklyBudget = cachedBudget;
+          weeklyBudget = (cachedBudget is int) ? cachedBudget.toDouble() : (cachedBudget as double);
         });
         debugPrint('Loaded cached weekly budget: $weeklyBudget for week $weekKey');
       }
@@ -126,11 +129,11 @@ class _HomePageState extends State<HomePage> {
       });
     }
 
-    // Load continued balance
     final previousWeek = startDate.subtract(const Duration(days: 7));
     final previousWeekKey = 'balance_weekly_${previousWeek.year}_${_getWeekNumber(previousWeek)}';
+    final previousBalance = prefs.get(previousWeekKey);
     setState(() {
-      continuedBalance = prefs.getDouble(previousWeekKey) ?? 0.0;
+      continuedBalance = (previousBalance is int) ? previousBalance.toDouble() : (previousBalance as double? ?? 0.0);
     });
   }
 
@@ -140,20 +143,16 @@ class _HomePageState extends State<HomePage> {
     final weekBudgetKey = 'budget_weekly_$weekKey';
     final hasWeekBudgetKey = 'has_weekly_budget_$weekKey';
 
-    // Save transactions
     await prefs.setString('transactions_weekly_$weekKey', jsonEncode(transactions));
-
-    // Save weekly budget if it exists
-    if (weeklyBudget > 0) {
+    await prefs.setBool(hasWeekBudgetKey, hasWeeklyBudget);
+    
+    if (hasWeeklyBudget && weeklyBudget > 0) {
       await prefs.setDouble(weekBudgetKey, weeklyBudget);
-      await prefs.setBool(hasWeekBudgetKey, true);
       debugPrint('Saved cached weekly budget: $weeklyBudget for week $weekKey');
     } else {
       await prefs.remove(weekBudgetKey);
-      await prefs.remove(hasWeekBudgetKey);
     }
 
-    // Save balance
     final balanceKey = 'balance_weekly_${startDate.year}_${_getWeekNumber(startDate)}';
     await prefs.setDouble(balanceKey, total);
   }
@@ -213,23 +212,34 @@ class _HomePageState extends State<HomePage> {
 
       if (response.statusCode == 200) {
         final List<dynamic> plans = jsonDecode(response.body);
-        final budgetValue = plans.isNotEmpty ? double.tryParse(plans[0]['nominal'].toString()) ?? 0.0 : 0.0;
-        setState(() {
-          weeklyBudget = budgetValue;
-        });
-        debugPrint('Fetched weekly budget: $budgetValue for $startFormatted to $endFormatted');
+        if (plans.isNotEmpty) {
+          final budgetValue = double.tryParse(plans[0]['nominal'].toString()) ?? 0.0;
+          setState(() {
+            weeklyBudget = budgetValue;
+            hasWeeklyBudget = budgetValue > 0;
+          });
+          debugPrint('Fetched weekly budget: $budgetValue for $startFormatted to $endFormatted');
+        } else {
+          setState(() {
+            weeklyBudget = 0.0;
+            hasWeeklyBudget = false;
+          });
+          debugPrint('No weekly budget found for $startFormatted to $endFormatted');
+        }
         await _saveCachedData();
       } else {
         setState(() {
           weeklyBudget = 0.0;
+          hasWeeklyBudget = false;
         });
-        debugPrint('No weekly budget found for $startFormatted to $endFormatted');
+        debugPrint('Failed to fetch weekly budget: ${response.statusCode}');
         await _saveCachedData();
       }
     } catch (e) {
       debugPrint('Error fetching weekly budget: $e');
       setState(() {
         weeklyBudget = 0.0;
+        hasWeeklyBudget = false;
       });
       await _saveCachedData();
     }
@@ -431,7 +441,15 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    final progress = weeklyBudget == 0.0 ? 0.0 : (outcome / weeklyBudget).clamp(0.0, 1.0);
+    final progress = hasWeeklyBudget && weeklyBudget > 0.0 ? (outcome / weeklyBudget).clamp(0.0, 1.0) : 0.0;
+    
+    // Check if current week is the actual current week (today)
+    final now = DateTime.now();
+    final currentWeekStart = DateTime(now.year, now.month, now.day - (now.weekday - 1));
+    final isCurrentWeek = startDate.year == currentWeekStart.year && 
+                         startDate.month == currentWeekStart.month && 
+                         startDate.day == currentWeekStart.day;
+    
     return Scaffold(
       appBar: AppBar(
         toolbarHeight: 0,
@@ -540,7 +558,8 @@ class _HomePageState extends State<HomePage> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  if (weeklyBudget > 0.0) ...[
+                  // Progress bar HANYA muncul jika hasWeeklyBudget true, weeklyBudget > 0, DAN ini adalah week saat ini
+                  if (hasWeeklyBudget && weeklyBudget > 0.0 && isCurrentWeek) ...[
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: Column(

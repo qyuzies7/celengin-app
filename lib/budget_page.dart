@@ -80,15 +80,21 @@ class _BudgetPageState extends State<BudgetPage> {
         setState(() {
           weeklyBudget = weekly != null ? int.tryParse(weekly['nominal'].toString()) ?? 0 : 0;
           monthlyBudget = monthly != null ? int.tryParse(monthly['nominal'].toString()) ?? 0 : 0;
+          
+          // Save budget status to cache
           if (weekly != null) {
             prefs.setInt(weekBudgetKey, weeklyBudget);
+            prefs.setBool('has_weekly_budget_${now.year}_${_getWeekNumber(now)}', true);
           } else {
             prefs.remove(weekBudgetKey);
+            prefs.setBool('has_weekly_budget_${now.year}_${_getWeekNumber(now)}', false);
           }
           if (monthly != null) {
             prefs.setInt(monthBudgetKey, monthlyBudget);
+            prefs.setBool('has_monthly_budget_${now.year}_${now.month}', true);
           } else {
             prefs.remove(monthBudgetKey);
+            prefs.setBool('has_monthly_budget_${now.year}_${now.month}', false);
           }
         });
       } else {
@@ -103,6 +109,8 @@ class _BudgetPageState extends State<BudgetPage> {
           monthlyBudget = 0;
           prefs.remove(weekBudgetKey);
           prefs.remove(monthBudgetKey);
+          prefs.setBool('has_weekly_budget_${now.year}_${_getWeekNumber(now)}', false);
+          prefs.setBool('has_monthly_budget_${now.year}_${now.month}', false);
         });
       }
     } catch (e) {
@@ -117,6 +125,8 @@ class _BudgetPageState extends State<BudgetPage> {
         monthlyBudget = 0;
         prefs.remove(weekBudgetKey);
         prefs.remove(monthBudgetKey);
+        prefs.setBool('has_weekly_budget_${now.year}_${_getWeekNumber(now)}', false);
+        prefs.setBool('has_monthly_budget_${now.year}_${now.month}', false);
       });
     }
   }
@@ -195,9 +205,11 @@ class _BudgetPageState extends State<BudgetPage> {
             if (mode == 'weekly') {
               weeklyBudget = 0;
               prefs.remove(weekBudgetKey);
+              prefs.setBool('has_weekly_budget_${now.year}_${_getWeekNumber(now)}', false);
             } else {
               monthlyBudget = 0;
               prefs.remove(monthBudgetKey);
+              prefs.setBool('has_monthly_budget_${now.year}_${now.month}', false);
             }
             amount = '';
             currentMode = '';
@@ -319,8 +331,10 @@ class _BudgetPageState extends State<BudgetPage> {
         final prefs = await SharedPreferences.getInstance();
         if (mode == 'weekly') {
           await prefs.setInt('budget_weekly_${now.year}_${_getWeekNumber(now)}', nominal);
+          await prefs.setBool('has_weekly_budget_${now.year}_${_getWeekNumber(now)}', true);
         } else {
           await prefs.setInt('budget_monthly_${now.year}_${now.month}', nominal);
+          await prefs.setBool('has_monthly_budget_${now.year}_${now.month}', true);
         }
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(

@@ -70,6 +70,7 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
   late DateTime currentMonth;
   List<Map<String, dynamic>> allTransactions = [];
   double monthlyBudget = 0.0;
+  bool hasMonthlyBudget = false;
   int currentIndex = 0;
   String? avatarPath;
   bool isLoading = false;
@@ -109,12 +110,16 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
       });
     }
 
-    final hasMonthlyBudget = prefs.getBool(hasMonthBudgetKey) ?? false;
+    final hasBudget = prefs.getBool(hasMonthBudgetKey) ?? false;
+    setState(() {
+      hasMonthlyBudget = hasBudget;
+    });
+
     if (hasMonthlyBudget) {
-      final cachedBudget = prefs.getDouble(monthBudgetKey);
+      final cachedBudget = prefs.get(monthBudgetKey); // Use get() instead of getDouble()
       if (cachedBudget != null) {
         setState(() {
-          monthlyBudget = cachedBudget;
+          monthlyBudget = (cachedBudget is int) ? cachedBudget.toDouble() : (cachedBudget as double);
         });
         debugPrint('Loaded cached monthly budget: $monthlyBudget for month $monthKey');
       }
@@ -126,8 +131,9 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
 
     final previousMonth = DateTime(currentMonth.year, currentMonth.month - 1);
     final previousMonthKey = 'balance_monthly_${previousMonth.year}_${previousMonth.month}';
+    final previousBalance = prefs.get(previousMonthKey);
     setState(() {
-      continuedBalance = prefs.getDouble(previousMonthKey) ?? 0.0;
+      continuedBalance = (previousBalance is int) ? previousBalance.toDouble() : (previousBalance as double? ?? 0.0);
     });
   }
 
@@ -138,14 +144,13 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
     final hasMonthBudgetKey = 'has_monthly_budget_$monthKey';
 
     await prefs.setString('transactions_monthly_$monthKey', jsonEncode(allTransactions));
+    await prefs.setBool(hasMonthBudgetKey, hasMonthlyBudget);
 
-    if (monthlyBudget > 0) {
+    if (hasMonthlyBudget && monthlyBudget > 0) {
       await prefs.setDouble(monthBudgetKey, monthlyBudget);
-      await prefs.setBool(hasMonthBudgetKey, true);
       debugPrint('Saved cached monthly budget: $monthlyBudget for month $monthKey');
     } else {
       await prefs.remove(monthBudgetKey);
-      await prefs.remove(hasMonthBudgetKey);
     }
 
     final balanceKey = 'balance_monthly_${currentMonth.year}_${currentMonth.month}';
@@ -207,23 +212,34 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
 
       if (response.statusCode == 200) {
         final List<dynamic> plans = jsonDecode(response.body);
-        final budgetValue = plans.isNotEmpty ? double.tryParse(plans[0]['nominal'].toString()) ?? 0.0 : 0.0;
-        setState(() {
-          monthlyBudget = budgetValue;
-        });
-        debugPrint('Fetched monthly budget: $budgetValue for $startFormatted to $endFormatted');
+        if (plans.isNotEmpty) {
+          final budgetValue = double.tryParse(plans[0]['nominal'].toString()) ?? 0.0;
+          setState(() {
+            monthlyBudget = budgetValue;
+            hasMonthlyBudget = budgetValue > 0;
+          });
+          debugPrint('Fetched monthly budget: $budgetValue for $startFormatted to $endFormatted');
+        } else {
+          setState(() {
+            monthlyBudget = 0.0;
+            hasMonthlyBudget = false;
+          });
+          debugPrint('No monthly budget found for $startFormatted to $endFormatted');
+        }
         await _saveCachedData();
       } else {
         setState(() {
           monthlyBudget = 0.0;
+          hasMonthlyBudget = false;
         });
-        debugPrint('No monthly budget found for $startFormatted to $endFormatted');
+        debugPrint('Failed to fetch monthly budget: ${response.statusCode}');
         await _saveCachedData();
       }
     } catch (e) {
       debugPrint('Error fetching monthly budget: $e');
       setState(() {
         monthlyBudget = 0.0;
+        hasMonthlyBudget = false;
       });
       await _saveCachedData();
     }
@@ -407,7 +423,12 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
 
   @override
   Widget build(BuildContext context) {
-    final progress = monthlyBudget == 0.0 ? 0.0 : (outcome / monthlyBudget).clamp(0.0, 1.0);
+    final progress = hasMonthlyBudget && monthlyBudget > 0.0 ? (outcome / monthlyBudget).clamp(0.0, 1.0) : 0.0;
+    
+    // Check if current month is the actual current month (today)
+    final now = DateTime.now();
+    final isCurrentMonth = currentMonth.year == now.year && currentMonth.month == now.month;
+    
     return Scaffold(
       appBar: AppBar(
         toolbarHeight: 0,
@@ -503,7 +524,8 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  if (monthlyBudget > 0.0) ...[
+                  // Progress bar HANYA muncul jika hasMonthlyBudget true, monthlyBudget > 0, DAN ini adalah month saat ini
+                  if (hasMonthlyBudget && monthlyBudget > 0.0 && isCurrentMonth) ...[
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: Column(
