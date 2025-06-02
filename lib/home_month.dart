@@ -75,6 +75,7 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
   String? avatarPath;
   bool isLoading = false;
   double continuedBalance = 0.0;
+  bool isNewUser = false; // Track if user is new
 
   final List<String> avatarList = [
     'assets/avatars/avatar1.png',
@@ -89,8 +90,26 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
     currentMonth = widget.initialDate ?? DateTime.now();
     currentMonth = DateTime(currentMonth.year, currentMonth.month, 1);
     _loadAvatar();
+    _checkIfNewUser();
     _loadCachedData();
     fetchData();
+  }
+
+  Future<void> _checkIfNewUser() async {
+    final prefs = await SharedPreferences.getInstance();
+    final userId = prefs.getInt('userId');
+    if (userId != null) {
+      // Check if user has any saved data (transactions, budgets, etc.)
+      final hasAnyData = prefs.getKeys().any((key) => 
+        key.startsWith('transactions_') || 
+        key.startsWith('budget_') || 
+        key.startsWith('has_weekly_budget_') ||
+        key.startsWith('has_monthly_budget_')
+      );
+      setState(() {
+        isNewUser = !hasAnyData;
+      });
+    }
   }
 
   Future<void> _loadCachedData() async {
@@ -103,6 +122,7 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
     if (cachedTx != null) {
       setState(() {
         allTransactions = List<Map<String, dynamic>>.from(jsonDecode(cachedTx));
+        isNewUser = false; // User has data, not new anymore
       });
     } else {
       setState(() {
@@ -116,10 +136,11 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
     });
 
     if (hasMonthlyBudget) {
-      final cachedBudget = prefs.get(monthBudgetKey); // Use get() instead of getDouble()
+      final cachedBudget = prefs.get(monthBudgetKey);
       if (cachedBudget != null) {
         setState(() {
           monthlyBudget = (cachedBudget is int) ? cachedBudget.toDouble() : (cachedBudget as double);
+          isNewUser = false; // User has budget, not new anymore
         });
         debugPrint('Loaded cached monthly budget: $monthlyBudget for month $monthKey');
       }
@@ -155,6 +176,13 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
 
     final balanceKey = 'balance_monthly_${currentMonth.year}_${currentMonth.month}';
     await prefs.setDouble(balanceKey, total);
+    
+    // Mark user as no longer new if they have data
+    if (allTransactions.isNotEmpty || hasMonthlyBudget) {
+      setState(() {
+        isNewUser = false;
+      });
+    }
   }
 
   Future<void> _loadAvatar() async {
@@ -217,6 +245,7 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
           setState(() {
             monthlyBudget = budgetValue;
             hasMonthlyBudget = budgetValue > 0;
+            if (hasMonthlyBudget) isNewUser = false; // User has budget, not new anymore
           });
           debugPrint('Fetched monthly budget: $budgetValue for $startFormatted to $endFormatted');
         } else {
@@ -294,6 +323,7 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
 
         setState(() {
           allTransactions = monthlyTransactions;
+          if (allTransactions.isNotEmpty) isNewUser = false; // User has transactions, not new anymore
         });
         await _saveCachedData();
       } else if (response.statusCode == 401) {
@@ -394,7 +424,10 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
         Navigator.pushReplacementNamed(context, '/chart_page');
         break;
       case 2:
-        Navigator.pushReplacementNamed(context, '/budget_page');
+        Navigator.pushReplacementNamed(context, '/budget_page').then((_) {
+          // Refresh data when returning from budget page
+          fetchData();
+        });
         break;
     }
   }
@@ -524,8 +557,8 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  // Progress bar HANYA muncul jika hasMonthlyBudget true, monthlyBudget > 0, DAN ini adalah month saat ini
-                  if (hasMonthlyBudget && monthlyBudget > 0.0 && isCurrentMonth) ...[
+                  // Progress bar ONLY shows if NOT new user AND has monthly budget AND budget > 0 AND is current month
+                  if (!isNewUser && hasMonthlyBudget && monthlyBudget > 0.0 && isCurrentMonth) ...[
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: Column(
@@ -583,12 +616,15 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
                             placeholderBuilder: (context) => const Icon(Icons.image_not_supported),
                           ),
                           const SizedBox(height: 12),
-                          const Text(
-                            'No transactions found for this month',
-                            style: TextStyle(
+                          Text(
+                            isNewUser 
+                              ? 'Welcome! Start by adding your first transaction or setting up a budget.'
+                              : 'No transactions found for this month',
+                            style: const TextStyle(
                               color: Colors.grey,
                               fontFamily: 'Poppins',
                             ),
+                            textAlign: TextAlign.center,
                           ),
                         ],
                       ),

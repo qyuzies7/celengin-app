@@ -75,6 +75,7 @@ class _HomePageState extends State<HomePage> {
   List<Map<String, dynamic>> transactions = [];
   bool isLoading = false;
   double continuedBalance = 0.0;
+  bool isNewUser = false; // Track if user is new
 
   final List<String> avatarList = [
     'assets/avatars/avatar1.png',
@@ -89,8 +90,26 @@ class _HomePageState extends State<HomePage> {
     startDate = widget.initialDate ?? DateTime.now();
     startDate = DateTime(startDate.year, startDate.month, startDate.day - (startDate.weekday - 1));
     _loadAvatar();
+    _checkIfNewUser();
     _loadCachedData();
     fetchData();
+  }
+
+  Future<void> _checkIfNewUser() async {
+    final prefs = await SharedPreferences.getInstance();
+    final userId = prefs.getInt('userId');
+    if (userId != null) {
+      // Check if user has any saved data (transactions, budgets, etc.)
+      final hasAnyData = prefs.getKeys().any((key) => 
+        key.startsWith('transactions_') || 
+        key.startsWith('budget_') || 
+        key.startsWith('has_weekly_budget_') ||
+        key.startsWith('has_monthly_budget_')
+      );
+      setState(() {
+        isNewUser = !hasAnyData;
+      });
+    }
   }
 
   Future<void> _loadCachedData() async {
@@ -103,6 +122,7 @@ class _HomePageState extends State<HomePage> {
     if (cachedTx != null) {
       setState(() {
         transactions = List<Map<String, dynamic>>.from(jsonDecode(cachedTx));
+        isNewUser = false; // User has data, not new anymore
       });
     } else {
       setState(() {
@@ -116,10 +136,11 @@ class _HomePageState extends State<HomePage> {
     });
 
     if (hasWeeklyBudget) {
-      final cachedBudget = prefs.get(weekBudgetKey); // Use get() instead of getDouble()
+      final cachedBudget = prefs.get(weekBudgetKey);
       if (cachedBudget != null) {
         setState(() {
           weeklyBudget = (cachedBudget is int) ? cachedBudget.toDouble() : (cachedBudget as double);
+          isNewUser = false; // User has budget, not new anymore
         });
         debugPrint('Loaded cached weekly budget: $weeklyBudget for week $weekKey');
       }
@@ -155,6 +176,13 @@ class _HomePageState extends State<HomePage> {
 
     final balanceKey = 'balance_weekly_${startDate.year}_${_getWeekNumber(startDate)}';
     await prefs.setDouble(balanceKey, total);
+    
+    // Mark user as no longer new if they have data
+    if (transactions.isNotEmpty || hasWeeklyBudget) {
+      setState(() {
+        isNewUser = false;
+      });
+    }
   }
 
   Future<void> _loadAvatar() async {
@@ -217,6 +245,7 @@ class _HomePageState extends State<HomePage> {
           setState(() {
             weeklyBudget = budgetValue;
             hasWeeklyBudget = budgetValue > 0;
+            if (hasWeeklyBudget) isNewUser = false; // User has budget, not new anymore
           });
           debugPrint('Fetched weekly budget: $budgetValue for $startFormatted to $endFormatted');
         } else {
@@ -301,6 +330,7 @@ class _HomePageState extends State<HomePage> {
 
         setState(() {
           transactions = weeklyTransactions;
+          if (transactions.isNotEmpty) isNewUser = false; // User has transactions, not new anymore
         });
         await _saveCachedData();
       } else if (response.statusCode == 401) {
@@ -401,7 +431,10 @@ class _HomePageState extends State<HomePage> {
         Navigator.pushReplacementNamed(context, '/chart_page');
         break;
       case 2:
-        Navigator.pushReplacementNamed(context, '/budget_page');
+        Navigator.pushReplacementNamed(context, '/budget_page').then((_) {
+          // Refresh data when returning from budget page
+          fetchData();
+        });
         break;
     }
   }
@@ -558,8 +591,8 @@ class _HomePageState extends State<HomePage> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  // Progress bar HANYA muncul jika hasWeeklyBudget true, weeklyBudget > 0, DAN ini adalah week saat ini
-                  if (hasWeeklyBudget && weeklyBudget > 0.0 && isCurrentWeek) ...[
+                  // Progress bar ONLY shows if NOT new user AND has weekly budget AND budget > 0 AND is current week
+                  if (!isNewUser && hasWeeklyBudget && weeklyBudget > 0.0 && isCurrentWeek) ...[
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: Column(
@@ -617,12 +650,15 @@ class _HomePageState extends State<HomePage> {
                             placeholderBuilder: (context) => const Icon(Icons.image_not_supported),
                           ),
                           const SizedBox(height: 12),
-                          const Text(
-                            'No transactions found for this week',
-                            style: TextStyle(
+                          Text(
+                            isNewUser 
+                              ? 'Welcome! Start by adding your first transaction or setting up a budget.'
+                              : 'No transactions found for this week',
+                            style: const TextStyle(
                               color: Colors.grey,
                               fontFamily: 'Poppins',
                             ),
+                            textAlign: TextAlign.center,
                           ),
                         ],
                       ),

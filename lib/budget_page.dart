@@ -329,19 +329,34 @@ class _BudgetPageState extends State<BudgetPage> {
 
       if (response.statusCode == 201) {
         final prefs = await SharedPreferences.getInstance();
+        
+        // Save to local cache immediately after successful API call
         if (mode == 'weekly') {
-          await prefs.setInt('budget_weekly_${now.year}_${_getWeekNumber(now)}', nominal);
-          await prefs.setBool('has_weekly_budget_${now.year}_${_getWeekNumber(now)}', true);
+          final weekBudgetKey = 'budget_weekly_${now.year}_${_getWeekNumber(now)}';
+          final hasWeekBudgetKey = 'has_weekly_budget_${now.year}_${_getWeekNumber(now)}';
+          await prefs.setInt(weekBudgetKey, nominal);
+          await prefs.setBool(hasWeekBudgetKey, true);
+          setState(() {
+            weeklyBudget = nominal;
+          });
+          debugPrint('Saved weekly budget to cache: $nominal');
         } else {
-          await prefs.setInt('budget_monthly_${now.year}_${now.month}', nominal);
-          await prefs.setBool('has_monthly_budget_${now.year}_${now.month}', true);
+          final monthBudgetKey = 'budget_monthly_${now.year}_${now.month}';
+          final hasMonthBudgetKey = 'has_monthly_budget_${now.year}_${now.month}';
+          await prefs.setInt(monthBudgetKey, nominal);
+          await prefs.setBool(hasMonthBudgetKey, true);
+          setState(() {
+            monthlyBudget = nominal;
+          });
+          debugPrint('Saved monthly budget to cache: $nominal');
         }
+        
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Budget saved successfully!')),
           );
         }
-        await fetchBudgets();
+        await fetchBudgets(); // Refresh from server to ensure consistency
         setState(() {
           amount = '';
           currentMode = '';
