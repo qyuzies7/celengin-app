@@ -7,7 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:math';
 import 'package:flutter_slidable/flutter_slidable.dart';
 
-const apiBaseUrl = 'http://10.0.2.2:8000/api';
+const apiBaseUrl = 'http://3.1.207.173/api';
 
 Future<String?> getTokenFromStorage() async {
   final prefs = await SharedPreferences.getInstance();
@@ -612,7 +612,7 @@ class HomeYearPageState extends State<HomeYearPage> {
               child: iconUrl != null && iconUrl.isNotEmpty
                   ? iconUrl.toLowerCase().endsWith('.svg')
                       ? SvgPicture.network(
-                          'http://10.0.2.2:8000/storage/$iconUrl',
+                          'http://3.1.207.173/storage/$iconUrl',
                           width: 20,
                           height: 20,
                           colorFilter: const ColorFilter.mode(
@@ -626,7 +626,7 @@ class HomeYearPageState extends State<HomeYearPage> {
                           ),
                         )
                       : Image.network(
-                          'http://10.0.2.2:8000/storage/$iconUrl',
+                          'http://3.1.207.173/storage/$iconUrl',
                           width: 20,
                           height: 20,
                           errorBuilder: (context, error, stackTrace) {

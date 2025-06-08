@@ -7,7 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:math';
 import 'package:flutter_slidable/flutter_slidable.dart';
 
-const apiBaseUrl = 'http://10.0.2.2:8000/api';
+const apiBaseUrl = 'http://3.1.207.173/api';
 
 Future<String?> getTokenFromStorage() async {
   final prefs = await SharedPreferences.getInstance();
@@ -67,7 +67,7 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  late DateTime startDate;
+  DateTime startDate = DateTime.now();
   int currentIndex = 0;
   String? avatarPath;
   double weeklyBudget = 0.0;
@@ -833,7 +833,7 @@ class _HomePageState extends State<HomePage> {
                           );
                         }
                         return SvgPicture.network(
-                          iconUrl.startsWith('http') ? iconUrl : 'http://10.0.2.2:8000/storage/$iconUrl',
+                          iconUrl.startsWith('http') ? iconUrl : 'http://3.1.207.173/storage/$iconUrl',
                           width: 20,
                           height: 20,
                           headers: {

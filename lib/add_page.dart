@@ -5,7 +5,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 
-const apiBaseUrl = 'http://10.0.2.2:8000/api';
+const apiBaseUrl = 'http://3.1.207.173/api';
 
 class AddPage extends StatefulWidget {
   const AddPage({super.key});
@@ -542,7 +542,7 @@ class _AddPageState extends State<AddPage> {
                             borderRadius: BorderRadius.circular(30),
                           ),
                           child: Text(
-                            type == 'Expenses' ? 'Pengeluaran' : 'Pemasukan',
+                            type == 'Expenses' ? 'Expenses' : 'Income',
                             style: TextStyle(
                               fontFamily: 'Poppins',
                               color: isSelected ? Colors.white : Colors.black,
@@ -595,7 +595,7 @@ class _AddPageState extends State<AddPage> {
                                                   return SvgPicture.network(
                                                     category['icon'].startsWith('http')
                                                         ? category['icon']
-                                                        : 'http://10.0.2.2:8000/storage/${category['icon']}',
+                                                        : 'http://3.1.207.173/storage/${category['icon']}',
                                                     headers: {
                                                       'Authorization': 'Bearer ${snapshot.data}',
                                                       'Accept': 'application/json',
@@ -642,7 +642,7 @@ class _AddPageState extends State<AddPage> {
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                       child: TextField(
                         decoration: InputDecoration(
-                          labelText: 'Catatan',
+                          labelText: 'Note',
                           labelStyle: const TextStyle(color: Colors.black, fontFamily: 'Poppins'),
                           filled: true,
                           fillColor: Colors.white,

@@ -5,7 +5,7 @@ import 'dart:convert';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-const apiBaseUrl = 'http://10.0.2.2:8000/api';
+const apiBaseUrl = 'http://3.1.207.173/api';
 
 class ChartPage extends StatefulWidget {
   const ChartPage({super.key});

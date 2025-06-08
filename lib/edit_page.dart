@@ -5,7 +5,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 
-const apiBaseUrl = 'http://10.0.2.2:8000/api';
+const apiBaseUrl = 'http://3.1.207.173/api';
 
 class EditPage extends StatefulWidget {
   const EditPage({super.key});
@@ -495,7 +495,7 @@ class _EditPageState extends State<EditPage> {
                                                       return SvgPicture.network(
                                                         category['icon'].startsWith('http')
                                                             ? category['icon']
-                                                            : 'http://10.0.2.2:8000/storage/${category['icon']}',
+                                                            : 'http://3.1.207.173/storage/${category['icon']}',
                                                         headers: {
                                                           'Authorization': 'Bearer ${snapshot.data}',
                                                           'Accept': 'application/json',

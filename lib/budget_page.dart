@@ -4,7 +4,7 @@ import 'dart:convert';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-const apiBaseUrl = 'http://10.0.2.2:8000/api';
+const apiBaseUrl = 'http://3.1.207.173/api';
 
 Future<String?> getTokenFromStorage() async {
   final prefs = await SharedPreferences.getInstance();
@@ -55,6 +55,8 @@ class _BudgetPageState extends State<BudgetPage> {
     final prefs = await SharedPreferences.getInstance();
     final weekBudgetKey = 'budget_weekly_${now.year}_${_getWeekNumber(now)}';
     final monthBudgetKey = 'budget_monthly_${now.year}_${now.month}';
+    final hasWeekBudgetKey = 'has_weekly_budget_${now.year}_${_getWeekNumber(now)}';
+    final hasMonthBudgetKey = 'has_monthly_budget_${now.year}_${now.month}';
 
     try {
       final response = await http.get(
@@ -80,21 +82,20 @@ class _BudgetPageState extends State<BudgetPage> {
         setState(() {
           weeklyBudget = weekly != null ? int.tryParse(weekly['nominal'].toString()) ?? 0 : 0;
           monthlyBudget = monthly != null ? int.tryParse(monthly['nominal'].toString()) ?? 0 : 0;
-          
-          // Save budget status to cache
+
           if (weekly != null) {
             prefs.setInt(weekBudgetKey, weeklyBudget);
-            prefs.setBool('has_weekly_budget_${now.year}_${_getWeekNumber(now)}', true);
+            prefs.setBool(hasWeekBudgetKey, true);
           } else {
             prefs.remove(weekBudgetKey);
-            prefs.setBool('has_weekly_budget_${now.year}_${_getWeekNumber(now)}', false);
+            prefs.setBool(hasWeekBudgetKey, false);
           }
           if (monthly != null) {
             prefs.setInt(monthBudgetKey, monthlyBudget);
-            prefs.setBool('has_monthly_budget_${now.year}_${now.month}', true);
+            prefs.setBool(hasMonthBudgetKey, true);
           } else {
             prefs.remove(monthBudgetKey);
-            prefs.setBool('has_monthly_budget_${now.year}_${now.month}', false);
+            prefs.setBool(hasMonthBudgetKey, false);
           }
         });
       } else {
@@ -109,8 +110,8 @@ class _BudgetPageState extends State<BudgetPage> {
           monthlyBudget = 0;
           prefs.remove(weekBudgetKey);
           prefs.remove(monthBudgetKey);
-          prefs.setBool('has_weekly_budget_${now.year}_${_getWeekNumber(now)}', false);
-          prefs.setBool('has_monthly_budget_${now.year}_${now.month}', false);
+          prefs.setBool(hasWeekBudgetKey, false);
+          prefs.setBool(hasMonthBudgetKey, false);
         });
       }
     } catch (e) {
@@ -125,8 +126,8 @@ class _BudgetPageState extends State<BudgetPage> {
         monthlyBudget = 0;
         prefs.remove(weekBudgetKey);
         prefs.remove(monthBudgetKey);
-        prefs.setBool('has_weekly_budget_${now.year}_${_getWeekNumber(now)}', false);
-        prefs.setBool('has_monthly_budget_${now.year}_${now.month}', false);
+        prefs.setBool(hasWeekBudgetKey, false);
+        prefs.setBool(hasMonthBudgetKey, false);
       });
     }
   }
@@ -150,6 +151,8 @@ class _BudgetPageState extends State<BudgetPage> {
     final prefs = await SharedPreferences.getInstance();
     final weekBudgetKey = 'budget_weekly_${now.year}_${_getWeekNumber(now)}';
     final monthBudgetKey = 'budget_monthly_${now.year}_${now.month}';
+    final hasWeekBudgetKey = 'has_weekly_budget_${now.year}_${_getWeekNumber(now)}';
+    final hasMonthBudgetKey = 'has_monthly_budget_${now.year}_${now.month}';
 
     try {
       final response = await http.get(
@@ -205,11 +208,11 @@ class _BudgetPageState extends State<BudgetPage> {
             if (mode == 'weekly') {
               weeklyBudget = 0;
               prefs.remove(weekBudgetKey);
-              prefs.setBool('has_weekly_budget_${now.year}_${_getWeekNumber(now)}', false);
+              prefs.setBool(hasWeekBudgetKey, false);
             } else {
               monthlyBudget = 0;
               prefs.remove(monthBudgetKey);
-              prefs.setBool('has_monthly_budget_${now.year}_${now.month}', false);
+              prefs.setBool(hasMonthBudgetKey, false);
             }
             amount = '';
             currentMode = '';
@@ -329,8 +332,6 @@ class _BudgetPageState extends State<BudgetPage> {
 
       if (response.statusCode == 201) {
         final prefs = await SharedPreferences.getInstance();
-        
-        // Save to local cache immediately after successful API call
         if (mode == 'weekly') {
           final weekBudgetKey = 'budget_weekly_${now.year}_${_getWeekNumber(now)}';
           final hasWeekBudgetKey = 'has_weekly_budget_${now.year}_${_getWeekNumber(now)}';
@@ -339,7 +340,6 @@ class _BudgetPageState extends State<BudgetPage> {
           setState(() {
             weeklyBudget = nominal;
           });
-          debugPrint('Saved weekly budget to cache: $nominal');
         } else {
           final monthBudgetKey = 'budget_monthly_${now.year}_${now.month}';
           final hasMonthBudgetKey = 'has_monthly_budget_${now.year}_${now.month}';
@@ -348,15 +348,14 @@ class _BudgetPageState extends State<BudgetPage> {
           setState(() {
             monthlyBudget = nominal;
           });
-          debugPrint('Saved monthly budget to cache: $nominal');
         }
-        
+
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Budget saved successfully!')),
           );
         }
-        await fetchBudgets(); // Refresh from server to ensure consistency
+        await fetchBudgets();
         setState(() {
           amount = '';
           currentMode = '';
