@@ -192,6 +192,11 @@ class HomeYearPageState extends State<HomeYearPage> {
           return txDate.year == currentYear;
         }).toList();
 
+        // SORT terbaru-terlama (descending)
+        yearlyTransactions.sort((a, b) =>
+          (b['date'] as DateTime).compareTo(a['date'] as DateTime)
+        );
+
         setState(() {
           allTransactions = yearlyTransactions;
         });

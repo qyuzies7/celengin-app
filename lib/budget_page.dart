@@ -52,11 +52,6 @@ class _BudgetPageState extends State<BudgetPage> {
     final weekEnd = weekStart.add(const Duration(days: 6));
     final monthStart = DateTime(now.year, now.month, 1);
     final monthEnd = DateTime(now.year, now.month + 1, 0);
-    final prefs = await SharedPreferences.getInstance();
-    final weekBudgetKey = 'budget_weekly_${now.year}_${_getWeekNumber(now)}';
-    final monthBudgetKey = 'budget_monthly_${now.year}_${now.month}';
-    final hasWeekBudgetKey = 'has_weekly_budget_${now.year}_${_getWeekNumber(now)}';
-    final hasMonthBudgetKey = 'has_monthly_budget_${now.year}_${now.month}';
 
     try {
       final response = await http.get(
@@ -82,21 +77,6 @@ class _BudgetPageState extends State<BudgetPage> {
         setState(() {
           weeklyBudget = weekly != null ? int.tryParse(weekly['nominal'].toString()) ?? 0 : 0;
           monthlyBudget = monthly != null ? int.tryParse(monthly['nominal'].toString()) ?? 0 : 0;
-
-          if (weekly != null) {
-            prefs.setInt(weekBudgetKey, weeklyBudget);
-            prefs.setBool(hasWeekBudgetKey, true);
-          } else {
-            prefs.remove(weekBudgetKey);
-            prefs.setBool(hasWeekBudgetKey, false);
-          }
-          if (monthly != null) {
-            prefs.setInt(monthBudgetKey, monthlyBudget);
-            prefs.setBool(hasMonthBudgetKey, true);
-          } else {
-            prefs.remove(monthBudgetKey);
-            prefs.setBool(hasMonthBudgetKey, false);
-          }
         });
       } else {
         debugPrint('Failed to fetch budgets: ${response.statusCode} - ${response.body}');
@@ -108,10 +88,6 @@ class _BudgetPageState extends State<BudgetPage> {
         setState(() {
           weeklyBudget = 0;
           monthlyBudget = 0;
-          prefs.remove(weekBudgetKey);
-          prefs.remove(monthBudgetKey);
-          prefs.setBool(hasWeekBudgetKey, false);
-          prefs.setBool(hasMonthBudgetKey, false);
         });
       }
     } catch (e) {
@@ -124,10 +100,6 @@ class _BudgetPageState extends State<BudgetPage> {
       setState(() {
         weeklyBudget = 0;
         monthlyBudget = 0;
-        prefs.remove(weekBudgetKey);
-        prefs.remove(monthBudgetKey);
-        prefs.setBool(hasWeekBudgetKey, false);
-        prefs.setBool(hasMonthBudgetKey, false);
       });
     }
   }
@@ -148,11 +120,6 @@ class _BudgetPageState extends State<BudgetPage> {
     final weekEnd = weekStart.add(const Duration(days: 6));
     final monthStart = DateTime(now.year, now.month, 1);
     final monthEnd = DateTime(now.year, now.month + 1, 0);
-    final prefs = await SharedPreferences.getInstance();
-    final weekBudgetKey = 'budget_weekly_${now.year}_${_getWeekNumber(now)}';
-    final monthBudgetKey = 'budget_monthly_${now.year}_${now.month}';
-    final hasWeekBudgetKey = 'has_weekly_budget_${now.year}_${_getWeekNumber(now)}';
-    final hasMonthBudgetKey = 'has_monthly_budget_${now.year}_${now.month}';
 
     try {
       final response = await http.get(
@@ -207,12 +174,8 @@ class _BudgetPageState extends State<BudgetPage> {
           setState(() {
             if (mode == 'weekly') {
               weeklyBudget = 0;
-              prefs.remove(weekBudgetKey);
-              prefs.setBool(hasWeekBudgetKey, false);
             } else {
               monthlyBudget = 0;
-              prefs.remove(monthBudgetKey);
-              prefs.setBool(hasMonthBudgetKey, false);
             }
             amount = '';
             currentMode = '';
@@ -331,25 +294,6 @@ class _BudgetPageState extends State<BudgetPage> {
       debugPrint('Save budget response: ${response.statusCode} - ${response.body}');
 
       if (response.statusCode == 201) {
-        final prefs = await SharedPreferences.getInstance();
-        if (mode == 'weekly') {
-          final weekBudgetKey = 'budget_weekly_${now.year}_${_getWeekNumber(now)}';
-          final hasWeekBudgetKey = 'has_weekly_budget_${now.year}_${_getWeekNumber(now)}';
-          await prefs.setInt(weekBudgetKey, nominal);
-          await prefs.setBool(hasWeekBudgetKey, true);
-          setState(() {
-            weeklyBudget = nominal;
-          });
-        } else {
-          final monthBudgetKey = 'budget_monthly_${now.year}_${now.month}';
-          final hasMonthBudgetKey = 'has_monthly_budget_${now.year}_${now.month}';
-          await prefs.setInt(monthBudgetKey, nominal);
-          await prefs.setBool(hasMonthBudgetKey, true);
-          setState(() {
-            monthlyBudget = nominal;
-          });
-        }
-
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Budget saved successfully!')),

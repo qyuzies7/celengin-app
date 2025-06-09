@@ -75,7 +75,6 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
   String? avatarPath;
   bool isLoading = false;
   double continuedBalance = 0.0;
-  bool isNewUser = false; // Track if user is new
 
   final List<String> avatarList = [
     'assets/avatars/avatar1.png',
@@ -90,99 +89,7 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
     currentMonth = widget.initialDate ?? DateTime.now();
     currentMonth = DateTime(currentMonth.year, currentMonth.month, 1);
     _loadAvatar();
-    _checkIfNewUser();
-    _loadCachedData();
     fetchData();
-  }
-
-  Future<void> _checkIfNewUser() async {
-    final prefs = await SharedPreferences.getInstance();
-    final userId = prefs.getInt('userId');
-    if (userId != null) {
-      // Check if user has any saved data (transactions, budgets, etc.)
-      final hasAnyData = prefs.getKeys().any((key) => 
-        key.startsWith('transactions_') || 
-        key.startsWith('budget_') || 
-        key.startsWith('has_weekly_budget_') ||
-        key.startsWith('has_monthly_budget_')
-      );
-      setState(() {
-        isNewUser = !hasAnyData;
-      });
-    }
-  }
-
-  Future<void> _loadCachedData() async {
-    final prefs = await SharedPreferences.getInstance();
-    final monthKey = '${currentMonth.year}_${currentMonth.month}';
-    final monthBudgetKey = 'budget_monthly_$monthKey';
-    final hasMonthBudgetKey = 'has_monthly_budget_$monthKey';
-
-    final cachedTx = prefs.getString('transactions_monthly_$monthKey');
-    if (cachedTx != null) {
-      setState(() {
-        allTransactions = List<Map<String, dynamic>>.from(jsonDecode(cachedTx));
-        isNewUser = false; // User has data, not new anymore
-      });
-    } else {
-      setState(() {
-        allTransactions = [];
-      });
-    }
-
-    final hasBudget = prefs.getBool(hasMonthBudgetKey) ?? false;
-    setState(() {
-      hasMonthlyBudget = hasBudget;
-    });
-
-    if (hasMonthlyBudget) {
-      final cachedBudget = prefs.get(monthBudgetKey);
-      if (cachedBudget != null) {
-        setState(() {
-          monthlyBudget = (cachedBudget is int) ? cachedBudget.toDouble() : (cachedBudget as double);
-          isNewUser = false; // User has budget, not new anymore
-        });
-        debugPrint('Loaded cached monthly budget: $monthlyBudget for month $monthKey');
-      }
-    } else {
-      setState(() {
-        monthlyBudget = 0.0;
-      });
-    }
-
-    final previousMonth = DateTime(currentMonth.year, currentMonth.month - 1);
-    final previousMonthKey = 'balance_monthly_${previousMonth.year}_${previousMonth.month}';
-    final previousBalance = prefs.get(previousMonthKey);
-    setState(() {
-      continuedBalance = (previousBalance is int) ? previousBalance.toDouble() : (previousBalance as double? ?? 0.0);
-    });
-  }
-
-  Future<void> _saveCachedData() async {
-    final prefs = await SharedPreferences.getInstance();
-    final monthKey = '${currentMonth.year}_${currentMonth.month}';
-    final monthBudgetKey = 'budget_monthly_$monthKey';
-    final hasMonthBudgetKey = 'has_monthly_budget_$monthKey';
-
-    await prefs.setString('transactions_monthly_$monthKey', jsonEncode(allTransactions));
-    await prefs.setBool(hasMonthBudgetKey, hasMonthlyBudget);
-
-    if (hasMonthlyBudget && monthlyBudget > 0) {
-      await prefs.setDouble(monthBudgetKey, monthlyBudget);
-      debugPrint('Saved cached monthly budget: $monthlyBudget for month $monthKey');
-    } else {
-      await prefs.remove(monthBudgetKey);
-    }
-
-    final balanceKey = 'balance_monthly_${currentMonth.year}_${currentMonth.month}';
-    await prefs.setDouble(balanceKey, total);
-    
-    // Mark user as no longer new if they have data
-    if (allTransactions.isNotEmpty || hasMonthlyBudget) {
-      setState(() {
-        isNewUser = false;
-      });
-    }
   }
 
   Future<void> _loadAvatar() async {
@@ -240,29 +147,24 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
 
       if (response.statusCode == 200) {
         final List<dynamic> plans = jsonDecode(response.body);
-        if (plans.isNotEmpty) {
+        if (plans.isNotEmpty && double.tryParse(plans[0]['nominal'].toString()) != null
+            && double.tryParse(plans[0]['nominal'].toString())! > 0) {
           final budgetValue = double.tryParse(plans[0]['nominal'].toString()) ?? 0.0;
           setState(() {
             monthlyBudget = budgetValue;
-            hasMonthlyBudget = budgetValue > 0;
-            if (hasMonthlyBudget) isNewUser = false; // User has budget, not new anymore
+            hasMonthlyBudget = true;
           });
-          debugPrint('Fetched monthly budget: $budgetValue for $startFormatted to $endFormatted');
         } else {
           setState(() {
             monthlyBudget = 0.0;
             hasMonthlyBudget = false;
           });
-          debugPrint('No monthly budget found for $startFormatted to $endFormatted');
         }
-        await _saveCachedData();
       } else {
         setState(() {
           monthlyBudget = 0.0;
           hasMonthlyBudget = false;
         });
-        debugPrint('Failed to fetch monthly budget: ${response.statusCode}');
-        await _saveCachedData();
       }
     } catch (e) {
       debugPrint('Error fetching monthly budget: $e');
@@ -270,7 +172,6 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
         monthlyBudget = 0.0;
         hasMonthlyBudget = false;
       });
-      await _saveCachedData();
     }
   }
 
@@ -321,11 +222,12 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
           return txDate.month == currentMonth.month && txDate.year == currentMonth.year;
         }).toList();
 
+        // Sort by date descending (terbaru-terlama)
+        monthlyTransactions.sort((a, b) => DateTime.parse(b['date']).compareTo(DateTime.parse(a['date'])));
+
         setState(() {
           allTransactions = monthlyTransactions;
-          if (allTransactions.isNotEmpty) isNewUser = false; // User has transactions, not new anymore
         });
-        await _saveCachedData();
       } else if (response.statusCode == 401) {
         if (mounted) {
           final prefs = await SharedPreferences.getInstance();
@@ -370,7 +272,6 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
         setState(() {
           allTransactions.removeWhere((tx) => tx['id'] == id);
         });
-        await _saveCachedData();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Transaksi berhasil dihapus')),
@@ -396,7 +297,6 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
     setState(() {
       currentMonth = DateTime(currentMonth.year, currentMonth.month + direction);
     });
-    _loadCachedData();
     fetchData();
   }
 
@@ -424,10 +324,7 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
         Navigator.pushReplacementNamed(context, '/chart_page');
         break;
       case 2:
-        Navigator.pushReplacementNamed(context, '/budget_page').then((_) {
-          // Refresh data when returning from budget page
-          fetchData();
-        });
+        Navigator.pushReplacementNamed(context, '/budget_page');
         break;
     }
   }
@@ -457,11 +354,9 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
   @override
   Widget build(BuildContext context) {
     final progress = hasMonthlyBudget && monthlyBudget > 0.0 ? (outcome / monthlyBudget).clamp(0.0, 1.0) : 0.0;
-    
-    // Check if current month is the actual current month (today)
     final now = DateTime.now();
     final isCurrentMonth = currentMonth.year == now.year && currentMonth.month == now.month;
-    
+
     return Scaffold(
       appBar: AppBar(
         toolbarHeight: 0,
@@ -557,8 +452,8 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  // Progress bar ONLY shows if NOT new user AND has monthly budget AND budget > 0 AND is current month
-                  if (!isNewUser && hasMonthlyBudget && monthlyBudget > 0.0 && isCurrentMonth) ...[
+                  // Progress bar HANYA muncul jika hasMonthlyBudget true, monthlyBudget > 0, DAN ini adalah month saat ini
+                  if (hasMonthlyBudget && monthlyBudget > 0.0 && isCurrentMonth && allTransactions.isNotEmpty) ...[
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: Column(
@@ -616,15 +511,12 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
                             placeholderBuilder: (context) => const Icon(Icons.image_not_supported),
                           ),
                           const SizedBox(height: 12),
-                          Text(
-                            isNewUser 
-                              ? 'Welcome! Start by adding your first transaction or setting up a budget.'
-                              : 'No transactions found for this month',
-                            style: const TextStyle(
+                          const Text(
+                            'No transactions found for this month',
+                            style: TextStyle(
                               color: Colors.grey,
                               fontFamily: 'Poppins',
                             ),
-                            textAlign: TextAlign.center,
                           ),
                         ],
                       ),

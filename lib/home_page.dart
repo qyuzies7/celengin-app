@@ -67,7 +67,7 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  DateTime startDate = DateTime.now();
+  late DateTime startDate;
   int currentIndex = 0;
   String? avatarPath;
   double weeklyBudget = 0.0;
@@ -75,7 +75,6 @@ class _HomePageState extends State<HomePage> {
   List<Map<String, dynamic>> transactions = [];
   bool isLoading = false;
   double continuedBalance = 0.0;
-  bool isNewUser = false; // Track if user is new
 
   final List<String> avatarList = [
     'assets/avatars/avatar1.png',
@@ -90,99 +89,7 @@ class _HomePageState extends State<HomePage> {
     startDate = widget.initialDate ?? DateTime.now();
     startDate = DateTime(startDate.year, startDate.month, startDate.day - (startDate.weekday - 1));
     _loadAvatar();
-    _checkIfNewUser();
-    _loadCachedData();
     fetchData();
-  }
-
-  Future<void> _checkIfNewUser() async {
-    final prefs = await SharedPreferences.getInstance();
-    final userId = prefs.getInt('userId');
-    if (userId != null) {
-      // Check if user has any saved data (transactions, budgets, etc.)
-      final hasAnyData = prefs.getKeys().any((key) => 
-        key.startsWith('transactions_') || 
-        key.startsWith('budget_') || 
-        key.startsWith('has_weekly_budget_') ||
-        key.startsWith('has_monthly_budget_')
-      );
-      setState(() {
-        isNewUser = !hasAnyData;
-      });
-    }
-  }
-
-  Future<void> _loadCachedData() async {
-    final prefs = await SharedPreferences.getInstance();
-    final weekKey = '${startDate.year}_${_getWeekNumber(startDate)}';
-    final weekBudgetKey = 'budget_weekly_$weekKey';
-    final hasWeekBudgetKey = 'has_weekly_budget_$weekKey';
-
-    final cachedTx = prefs.getString('transactions_weekly_$weekKey');
-    if (cachedTx != null) {
-      setState(() {
-        transactions = List<Map<String, dynamic>>.from(jsonDecode(cachedTx));
-        isNewUser = false; // User has data, not new anymore
-      });
-    } else {
-      setState(() {
-        transactions = [];
-      });
-    }
-
-    final hasBudget = prefs.getBool(hasWeekBudgetKey) ?? false;
-    setState(() {
-      hasWeeklyBudget = hasBudget;
-    });
-
-    if (hasWeeklyBudget) {
-      final cachedBudget = prefs.get(weekBudgetKey);
-      if (cachedBudget != null) {
-        setState(() {
-          weeklyBudget = (cachedBudget is int) ? cachedBudget.toDouble() : (cachedBudget as double);
-          isNewUser = false; // User has budget, not new anymore
-        });
-        debugPrint('Loaded cached weekly budget: $weeklyBudget for week $weekKey');
-      }
-    } else {
-      setState(() {
-        weeklyBudget = 0.0;
-      });
-    }
-
-    final previousWeek = startDate.subtract(const Duration(days: 7));
-    final previousWeekKey = 'balance_weekly_${previousWeek.year}_${_getWeekNumber(previousWeek)}';
-    final previousBalance = prefs.get(previousWeekKey);
-    setState(() {
-      continuedBalance = (previousBalance is int) ? previousBalance.toDouble() : (previousBalance as double? ?? 0.0);
-    });
-  }
-
-  Future<void> _saveCachedData() async {
-    final prefs = await SharedPreferences.getInstance();
-    final weekKey = '${startDate.year}_${_getWeekNumber(startDate)}';
-    final weekBudgetKey = 'budget_weekly_$weekKey';
-    final hasWeekBudgetKey = 'has_weekly_budget_$weekKey';
-
-    await prefs.setString('transactions_weekly_$weekKey', jsonEncode(transactions));
-    await prefs.setBool(hasWeekBudgetKey, hasWeeklyBudget);
-    
-    if (hasWeeklyBudget && weeklyBudget > 0) {
-      await prefs.setDouble(weekBudgetKey, weeklyBudget);
-      debugPrint('Saved cached weekly budget: $weeklyBudget for week $weekKey');
-    } else {
-      await prefs.remove(weekBudgetKey);
-    }
-
-    final balanceKey = 'balance_weekly_${startDate.year}_${_getWeekNumber(startDate)}';
-    await prefs.setDouble(balanceKey, total);
-    
-    // Mark user as no longer new if they have data
-    if (transactions.isNotEmpty || hasWeeklyBudget) {
-      setState(() {
-        isNewUser = false;
-      });
-    }
   }
 
   Future<void> _loadAvatar() async {
@@ -240,29 +147,24 @@ class _HomePageState extends State<HomePage> {
 
       if (response.statusCode == 200) {
         final List<dynamic> plans = jsonDecode(response.body);
-        if (plans.isNotEmpty) {
+        if (plans.isNotEmpty && double.tryParse(plans[0]['nominal'].toString()) != null
+            && double.tryParse(plans[0]['nominal'].toString())! > 0) {
           final budgetValue = double.tryParse(plans[0]['nominal'].toString()) ?? 0.0;
           setState(() {
             weeklyBudget = budgetValue;
-            hasWeeklyBudget = budgetValue > 0;
-            if (hasWeeklyBudget) isNewUser = false; // User has budget, not new anymore
+            hasWeeklyBudget = true;
           });
-          debugPrint('Fetched weekly budget: $budgetValue for $startFormatted to $endFormatted');
         } else {
           setState(() {
             weeklyBudget = 0.0;
             hasWeeklyBudget = false;
           });
-          debugPrint('No weekly budget found for $startFormatted to $endFormatted');
         }
-        await _saveCachedData();
       } else {
         setState(() {
           weeklyBudget = 0.0;
           hasWeeklyBudget = false;
         });
-        debugPrint('Failed to fetch weekly budget: ${response.statusCode}');
-        await _saveCachedData();
       }
     } catch (e) {
       debugPrint('Error fetching weekly budget: $e');
@@ -270,7 +172,6 @@ class _HomePageState extends State<HomePage> {
         weeklyBudget = 0.0;
         hasWeeklyBudget = false;
       });
-      await _saveCachedData();
     }
   }
 
@@ -328,11 +229,12 @@ class _HomePageState extends State<HomePage> {
               txDate.isBefore(weekEnd.add(const Duration(days: 1)));
         }).toList();
 
+        // Sort by date descending (terbaru-terlama)
+        weeklyTransactions.sort((a, b) => DateTime.parse(b['date']).compareTo(DateTime.parse(a['date'])));
+
         setState(() {
           transactions = weeklyTransactions;
-          if (transactions.isNotEmpty) isNewUser = false; // User has transactions, not new anymore
         });
-        await _saveCachedData();
       } else if (response.statusCode == 401) {
         if (mounted) {
           final prefs = await SharedPreferences.getInstance();
@@ -377,7 +279,6 @@ class _HomePageState extends State<HomePage> {
         setState(() {
           transactions.removeWhere((tx) => tx['id'] == id);
         });
-        await _saveCachedData();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Transaksi berhasil dihapus')),
@@ -403,7 +304,6 @@ class _HomePageState extends State<HomePage> {
     setState(() {
       startDate = startDate.add(Duration(days: 7 * direction));
     });
-    _loadCachedData();
     fetchData();
   }
 
@@ -431,10 +331,7 @@ class _HomePageState extends State<HomePage> {
         Navigator.pushReplacementNamed(context, '/chart_page');
         break;
       case 2:
-        Navigator.pushReplacementNamed(context, '/budget_page').then((_) {
-          // Refresh data when returning from budget page
-          fetchData();
-        });
+        Navigator.pushReplacementNamed(context, '/budget_page');
         break;
     }
   }
@@ -472,17 +369,23 @@ class _HomePageState extends State<HomePage> {
     return ((days + firstJan.weekday) / 7).ceil();
   }
 
+  bool get isCurrentWeek {
+    final now = DateTime.now();
+    final startOfWeek = DateTime(now.year, now.month, now.day - now.weekday + 1);
+    return startDate.isAtSameMomentAs(startOfWeek);
+  }
+
   @override
   Widget build(BuildContext context) {
     final progress = hasWeeklyBudget && weeklyBudget > 0.0 ? (outcome / weeklyBudget).clamp(0.0, 1.0) : 0.0;
-    
+
     // Check if current week is the actual current week (today)
     final now = DateTime.now();
     final currentWeekStart = DateTime(now.year, now.month, now.day - (now.weekday - 1));
-    final isCurrentWeek = startDate.year == currentWeekStart.year && 
-                         startDate.month == currentWeekStart.month && 
-                         startDate.day == currentWeekStart.day;
-    
+    final isCurrentWeek = startDate.year == currentWeekStart.year &&
+        startDate.month == currentWeekStart.month &&
+        startDate.day == currentWeekStart.day;
+
     return Scaffold(
       appBar: AppBar(
         toolbarHeight: 0,
@@ -591,8 +494,8 @@ class _HomePageState extends State<HomePage> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  // Progress bar ONLY shows if NOT new user AND has weekly budget AND budget > 0 AND is current week
-                  if (!isNewUser && hasWeeklyBudget && weeklyBudget > 0.0 && isCurrentWeek) ...[
+                  // Progress bar HANYA muncul jika hasWeeklyBudget true, weeklyBudget > 0, DAN ini adalah week saat ini
+                  if (hasWeeklyBudget && weeklyBudget > 0.0 && isCurrentWeek && transactions.isNotEmpty) ...[
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: Column(
@@ -650,15 +553,12 @@ class _HomePageState extends State<HomePage> {
                             placeholderBuilder: (context) => const Icon(Icons.image_not_supported),
                           ),
                           const SizedBox(height: 12),
-                          Text(
-                            isNewUser 
-                              ? 'Welcome! Start by adding your first transaction or setting up a budget.'
-                              : 'No transactions found for this week',
-                            style: const TextStyle(
+                          const Text(
+                            'No transactions found for this week',
+                            style: TextStyle(
                               color: Colors.grey,
                               fontFamily: 'Poppins',
                             ),
-                            textAlign: TextAlign.center,
                           ),
                         ],
                       ),
