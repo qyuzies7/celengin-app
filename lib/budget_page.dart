@@ -58,7 +58,7 @@ class _BudgetPageState extends State<BudgetPage> {
         Uri.parse('$apiBaseUrl/plan'),
         headers: {'Authorization': 'Bearer $token'},
       );
-      if (response.statusCode == 200) {
+      if (response.statusCode == 200 || response.statusCode == 201) {
         final List<dynamic> plans = jsonDecode(response.body);
         final weekly = plans.firstWhere(
           (p) =>
@@ -293,7 +293,8 @@ class _BudgetPageState extends State<BudgetPage> {
 
       debugPrint('Save budget response: ${response.statusCode} - ${response.body}');
 
-      if (response.statusCode == 201) {
+      // --- PERBAIKAN DI SINI: 200 atau 201 dianggap berhasil
+      if (response.statusCode == 200 || response.statusCode == 201) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Budget saved successfully!')),

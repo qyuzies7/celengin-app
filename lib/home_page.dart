@@ -138,7 +138,7 @@ class _HomePageState extends State<HomePage> {
 
     try {
       final response = await http.get(
-        Uri.parse('$apiBaseUrl/plan?periode_type=weekly&periode_start=$startFormatted&periode_end=$endFormatted'),
+        Uri.parse('$apiBaseUrl/plan'),
         headers: {
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',
@@ -147,9 +147,17 @@ class _HomePageState extends State<HomePage> {
 
       if (response.statusCode == 200) {
         final List<dynamic> plans = jsonDecode(response.body);
-        if (plans.isNotEmpty && double.tryParse(plans[0]['nominal'].toString()) != null
-            && double.tryParse(plans[0]['nominal'].toString())! > 0) {
-          final budgetValue = double.tryParse(plans[0]['nominal'].toString()) ?? 0.0;
+        final weekPlan = plans.firstWhere(
+          (plan) =>
+              plan['periode_type'] == 'weekly' &&
+              plan['periode_start'] == startFormatted &&
+              plan['periode_end'] == endFormatted,
+          orElse: () => null,
+        );
+        if (weekPlan != null &&
+            double.tryParse(weekPlan['nominal'].toString()) != null &&
+            double.tryParse(weekPlan['nominal'].toString())! > 0) {
+          final budgetValue = double.tryParse(weekPlan['nominal'].toString()) ?? 0.0;
           setState(() {
             weeklyBudget = budgetValue;
             hasWeeklyBudget = true;
@@ -354,7 +362,7 @@ class _HomePageState extends State<HomePage> {
   double get total => income - outcome + continuedBalance;
 
   String _formatCurrency(double amount) {
-    return NumberFormat('#,##0', 'id_ID').format(amount.abs());
+    return NumberFormat('#,##0', 'id_ID').format(amount);
   }
 
   Color _getProgressColor(double progress) {
@@ -379,7 +387,6 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     final progress = hasWeeklyBudget && weeklyBudget > 0.0 ? (outcome / weeklyBudget).clamp(0.0, 1.0) : 0.0;
 
-    // Check if current week is the actual current week (today)
     final now = DateTime.now();
     final currentWeekStart = DateTime(now.year, now.month, now.day - (now.weekday - 1));
     final isCurrentWeek = startDate.year == currentWeekStart.year &&
@@ -494,7 +501,6 @@ class _HomePageState extends State<HomePage> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  // Progress bar HANYA muncul jika hasWeeklyBudget true, weeklyBudget > 0, DAN ini adalah week saat ini
                   if (hasWeeklyBudget && weeklyBudget > 0.0 && isCurrentWeek && transactions.isNotEmpty) ...[
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -520,7 +526,8 @@ class _HomePageState extends State<HomePage> {
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
                               Text(
-                                'Budget Left: ${_formatCurrency(weeklyBudget - outcome)}',
+                                // TAMPILKAN MINUS JIKA MELEBIHI BUDGET
+                                'Budget Left: ${weeklyBudget - outcome < 0 ? '-' : ''}Rp ${_formatCurrency((weeklyBudget - outcome).abs())}',
                                 style: const TextStyle(
                                   fontSize: 12,
                                   color: Colors.grey,
@@ -528,7 +535,7 @@ class _HomePageState extends State<HomePage> {
                                 ),
                               ),
                               Text(
-                                'Budget: ${_formatCurrency(weeklyBudget)}',
+                                'Budget: Rp ${_formatCurrency(weeklyBudget)}',
                                 style: const TextStyle(
                                   fontSize: 12,
                                   color: Colors.grey,
@@ -599,8 +606,8 @@ class _HomePageState extends State<HomePage> {
                             tx['title'] as String,
                             '${DateTime.parse(tx['date'] as String).day}/${DateTime.parse(tx['date'] as String).month}/${DateTime.parse(tx['date'] as String).year}',
                             (tx['amount'] as double) > 0
-                                ? '+Rp ${_formatCurrency(tx['amount'] as double)}'
-                                : '-Rp ${_formatCurrency(tx['amount'] as double)}',
+                                ? '+Rp ${_formatCurrency(tx['amount'].abs())}'
+                                : '-Rp ${_formatCurrency(tx['amount'].abs())}',
                             tx['icon'] as String?,
                             tx['description'] as String,
                             (tx['amount'] as double) > 0 ? Colors.green : Colors.red,

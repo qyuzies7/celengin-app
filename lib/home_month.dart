@@ -121,6 +121,7 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
     });
   }
 
+  // PERBAIKAN FILTER BUDGET BULANAN
   Future<void> fetchMonthlyBudget() async {
     final token = await getTokenFromStorage();
     if (token == null) {
@@ -138,7 +139,7 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
 
     try {
       final response = await http.get(
-        Uri.parse('$apiBaseUrl/plan?periode_type=monthly&periode_start=$startFormatted&periode_end=$endFormatted'),
+        Uri.parse('$apiBaseUrl/plan'),
         headers: {
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',
@@ -147,9 +148,17 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
 
       if (response.statusCode == 200) {
         final List<dynamic> plans = jsonDecode(response.body);
-        if (plans.isNotEmpty && double.tryParse(plans[0]['nominal'].toString()) != null
-            && double.tryParse(plans[0]['nominal'].toString())! > 0) {
-          final budgetValue = double.tryParse(plans[0]['nominal'].toString()) ?? 0.0;
+        final monthPlan = plans.firstWhere(
+          (plan) =>
+            plan['periode_type'] == 'monthly' &&
+            plan['periode_start'] == startFormatted &&
+            plan['periode_end'] == endFormatted,
+          orElse: () => null,
+        );
+        if (monthPlan != null &&
+            double.tryParse(monthPlan['nominal'].toString()) != null &&
+            double.tryParse(monthPlan['nominal'].toString())! > 0) {
+          final budgetValue = double.tryParse(monthPlan['nominal'].toString()) ?? 0.0;
           setState(() {
             monthlyBudget = budgetValue;
             hasMonthlyBudget = true;
@@ -342,7 +351,7 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
   double get total => income - outcome + continuedBalance;
 
   String _formatCurrency(double amount) {
-    return NumberFormat('#,##0', 'id_ID').format(amount.abs());
+    return NumberFormat('#,##0', 'id_ID').format(amount);
   }
 
   Color _getProgressColor(double progress) {
@@ -452,7 +461,6 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  // Progress bar HANYA muncul jika hasMonthlyBudget true, monthlyBudget > 0, DAN ini adalah month saat ini
                   if (hasMonthlyBudget && monthlyBudget > 0.0 && isCurrentMonth && allTransactions.isNotEmpty) ...[
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -478,7 +486,8 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
                               Text(
-                                'Budget Left: ${_formatCurrency(monthlyBudget - outcome)}',
+                                // TAMPILKAN MINUS JIKA MELEBIHI BUDGET
+                                'Budget Left: ${monthlyBudget - outcome < 0 ? '-' : ''}Rp ${_formatCurrency((monthlyBudget - outcome).abs())}',
                                 style: const TextStyle(
                                   fontSize: 12,
                                   color: Colors.grey,
@@ -486,7 +495,7 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
                                 ),
                               ),
                               Text(
-                                'Budget: ${_formatCurrency(monthlyBudget)}',
+                                'Budget: Rp ${_formatCurrency(monthlyBudget)}',
                                 style: const TextStyle(
                                   fontSize: 12,
                                   color: Colors.grey,
@@ -557,8 +566,8 @@ class _HomeMonthPageState extends State<HomeMonthPage> {
                             tx['title'] as String,
                             '${DateTime.parse(tx['date'] as String).day}/${DateTime.parse(tx['date'] as String).month}/${DateTime.parse(tx['date'] as String).year}',
                             (tx['amount'] as double) > 0
-                                ? '+Rp ${_formatCurrency(tx['amount'] as double)}'
-                                : '-Rp ${_formatCurrency(tx['amount'] as double)}',
+                                ? '+Rp ${_formatCurrency(tx['amount'].abs())}'
+                                : '-Rp ${_formatCurrency(tx['amount'].abs())}',
                             tx['icon'] as String?,
                             tx['description'] as String,
                             (tx['amount'] as double) > 0 ? Colors.green : Colors.red,

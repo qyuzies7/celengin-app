@@ -178,11 +178,13 @@ class HomeYearPageState extends State<HomeYearPage> {
             icon = item['outcome']['icon']?.toString();
             categoryName = item['outcome']['nama']?.toString() ?? 'Unknown';
           }
+          final dateString = item['tanggal']?.toString() ?? DateTime.now().toIso8601String();
+          final date = DateTime.tryParse(dateString) ?? DateTime.now();
           return {
             'id': item['id'],
             'title': categoryName ?? 'Unknown',
             'description': item['keterangan']?.toString() ?? '',
-            'date': DateTime.tryParse(item['tanggal'].toString()) ?? DateTime.now(),
+            'date': date,
             'amount': double.tryParse(item['nominal'].toString()) ?? 0.0,
             'icon': icon ?? '',
             'type': item['jenis'],
@@ -192,7 +194,7 @@ class HomeYearPageState extends State<HomeYearPage> {
           return txDate.year == currentYear;
         }).toList();
 
-        // SORT terbaru-terlama (descending)
+        // Sort by date descending (terbaru di atas)
         yearlyTransactions.sort((a, b) =>
           (b['date'] as DateTime).compareTo(a['date'] as DateTime)
         );
@@ -490,10 +492,10 @@ class HomeYearPageState extends State<HomeYearPage> {
                           ),
                           child: _buildTransactionItem(
                             tx['title'],
-                            '${tx['date'].day}/${tx['date'].month}/${tx['date'].year}',
+                            '${(tx['date'] as DateTime).day}/${(tx['date'] as DateTime).month}/${(tx['date'] as DateTime).year}',
                             tx['amount'] > 0
-                                ? '+Rp ${_formatCurrency(tx['amount'].abs())}'
-                                : '-Rp ${_formatCurrency(tx['amount'].abs())}',
+                                ? '+Rp ${_formatCurrency((tx['amount']).abs())}'
+                                : '-Rp ${_formatCurrency((tx['amount']).abs())}',
                             tx['icon'],
                             tx['description'],
                             tx['amount'] > 0 ? Colors.green : Colors.red,
